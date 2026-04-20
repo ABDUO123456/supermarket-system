@@ -6,10 +6,31 @@ const { runDispatch, DISPATCH_CHANNELS } = require('./dispatch');
 const { buildReceiptHtml } = require('./receipt-html');
 
 function registerIpcHandlers(ipcMain, getDb) {
+  // تسجيل القنوات الافتراضية
   for (const ch of DISPATCH_CHANNELS) {
     ipcMain.handle(ch, (_event, ...args) => runDispatch(getDb, ch, args));
   }
 
+  // --- إضافة قناة الماسح الضوئي (Barcode Scanner) ---
+  ipcMain.handle('scan:barcode', async (_event, barcode) => {
+    try {
+      if (!barcode) return { ok: false, error: 'الباركود مطلوب' };
+      
+      const db = getDb();
+      // البحث عن المنتج في جدول products بواسطة الباركود
+      const product = db.prepare('SELECT * FROM products WHERE barcode = ?').get(barcode);
+      
+      if (product) {
+        return { ok: true, result: product };
+      } else {
+        return { ok: false, error: 'المنتج غير موجود' };
+      }
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
+  });
+
+  // معالج حفظ الملفات (Export)
   ipcMain.handle('export:saveText', async (event, { defaultName, content }) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const { canceled, filePath } = await dialog.showSaveDialog(win || undefined, {
@@ -26,6 +47,7 @@ function registerIpcHandlers(ipcMain, getDb) {
     return { ok: true, path: filePath };
   });
 
+  // معالج طباعة الفاتورة
   ipcMain.handle('print:receipt', async (_event, saleId) => {
     const r = buildReceiptHtml(getDb, saleId);
     if (!r.ok) return r;
