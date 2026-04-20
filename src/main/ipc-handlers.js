@@ -1,0 +1,56 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { BrowserWindow, dialog } = require('electron');
+const { runDispatch, DISPATCH_CHANNELS } = require('./dispatch');
+const { buildReceiptHtml } = require('./receipt-html');
+
+function registerIpcHandlers(ipcMain, getDb) {
+  for (const ch of DISPATCH_CHANNELS) {
+    ipcMain.handle(ch, (_event, ...args) => runDispatch(getDb, ch, args));
+  }
+
+  ipcMain.handle('export:saveText', async (event, { defaultName, content }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const { canceled, filePath } = await dialog.showSaveDialog(win || undefined, {
+      title: 'حفظ الملف',
+      defaultPath: defaultName || 'export.csv',
+      filters: [
+        { name: 'CSV', extensions: ['csv'] },
+        { name: 'نص', extensions: ['txt'] },
+        { name: 'الكل', extensions: ['*'] }
+      ]
+    });
+    if (canceled || !filePath) return { ok: false, canceled: true };
+    fs.writeFileSync(filePath, String(content), 'utf8');
+    return { ok: true, path: filePath };
+  });
+
+  ipcMain.handle('print:receipt', async (_event, saleId) => {
+    const r = buildReceiptHtml(getDb, saleId);
+    if (!r.ok) return r;
+    const html = r.receiptHtml;
+    const tmp = path.join(os.tmpdir(), `receipt-${saleId}-${Date.now()}.html`);
+    fs.writeFileSync(tmp, html, 'utf8');
+    const printWin = new BrowserWindow({ show: false, width: 420, height: 720 });
+    try {
+      await printWin.loadFile(tmp);
+      await new Promise((resolve) => {
+        printWin.webContents.print({ silent: false, printBackground: true }, () => resolve());
+      });
+      printWin.close();
+      fs.unlink(tmp, () => {});
+      return { ok: true };
+    } catch (e) {
+      try {
+        printWin.close();
+      } catch (_) {}
+      try {
+        fs.unlinkSync(tmp);
+      } catch (_) {}
+      return { ok: false, error: String(e.message || e) };
+    }
+  });
+}
+
+module.exports = { registerIpcHandlers };

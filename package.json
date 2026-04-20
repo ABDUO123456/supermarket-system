@@ -1,0 +1,45 @@
+{
+  "name": "supermarket-system",
+  "version": "1.0.0",
+  "description": "إدارة سوبر ماركت — Electron + SQLite + خادم للهاتف",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "server": "node server/index.js",
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "build:desktop": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.supermarket.system",
+    "productName": "Supermarket",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0"
+  }
+}

@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com" />
+    <title>سوبر ماركت — إدارة</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body data-theme="dark">
+    <div id="app-loading" class="app-loading" hidden aria-busy="true">
+      <div class="spinner" aria-hidden="true"></div>
+      <span>جاري التحميل…</span>
+    </div>
+
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">🛒</span>
+          <div>
+            <div class="brand-title" id="brand-store-name">سوبر ماركت</div>
+            <div class="brand-sub">نظام إدارة احترافي</div>
+          </div>
+        </div>
+        <nav class="nav" id="main-nav">
+          <button type="button" class="nav-item is-active" data-page="dashboard">
+            <span class="nav-icon">◆</span>
+            <span>لوحة التحكم</span>
+          </button>
+          <button type="button" class="nav-item" data-page="pos">
+            <span class="nav-icon">▣</span>
+            <span>نقطة البيع</span>
+          </button>
+          <button type="button" class="nav-item" data-page="inventory">
+            <span class="nav-icon">▤</span>
+            <span>المخزون</span>
+          </button>
+          <button type="button" class="nav-item" data-page="categories">
+            <span class="nav-icon">◇</span>
+            <span>التصنيفات</span>
+          </button>
+          <button type="button" class="nav-item" data-page="sales">
+            <span class="nav-icon">☰</span>
+            <span>المبيعات</span>
+          </button>
+          <button type="button" class="nav-item" data-page="reports">
+            <span class="nav-icon">▥</span>
+            <span>التقارير</span>
+          </button>
+          <button type="button" class="nav-item" data-page="settings">
+            <span class="nav-icon">⚙</span>
+            <span>الإعدادات</span>
+          </button>
+        </nav>
+        <footer class="sidebar-foot">
+          <span class="muted">SQLite محلي · آمن وسريع</span>
+        </footer>
+      </aside>
+
+      <div class="main">
+        <header class="topbar">
+          <h1 class="page-title" id="page-title">لوحة التحكم</h1>
+          <div class="topbar-actions">
+            <span class="pill" id="clock-pill"></span>
+          </div>
+        </header>
+
+        <main class="content">
+          <section class="page is-visible" id="page-dashboard" data-title="لوحة التحكم">
+            <div class="stats-grid" id="stats-grid">
+              <article class="stat-card">
+                <div class="stat-label">المنتجات</div>
+                <div class="stat-value" id="stat-products">—</div>
+                <div class="stat-hint">إجمالي الأصناف المسجلة</div>
+              </article>
+              <article class="stat-card stat-warn">
+                <div class="stat-label">تنبيه مخزون</div>
+                <div class="stat-value" id="stat-low">—</div>
+                <div class="stat-hint" id="stat-low-hint">أصناف تحت حد التنبيه</div>
+              </article>
+              <article class="stat-card stat-accent">
+                <div class="stat-label">مبيعات اليوم</div>
+                <div class="stat-value" id="stat-sales-today">—</div>
+                <div class="stat-hint">عدد الفواتير</div>
+              </article>
+              <article class="stat-card stat-accent">
+                <div class="stat-label">إيراد اليوم</div>
+                <div class="stat-value" id="stat-revenue">—</div>
+                <div class="stat-hint">مجموع المبيعات</div>
+              </article>
+            </div>
+
+            <div class="dash-grid">
+              <div class="dash-card">
+                <div class="dash-card-head">
+                  <h2>إيراد آخر 7 أيام</h2>
+                </div>
+                <div class="chart-wrap" id="chart-wrap" aria-label="رسم بياني"></div>
+              </div>
+              <div class="dash-stack">
+                <div class="dash-card grow">
+                  <div class="dash-card-head">
+                    <h2>أحدث الفواتير</h2>
+                  </div>
+                  <div class="table-wrap dash-table">
+                    <table class="table table-dense">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>الوقت</th>
+                          <th>المبلغ</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody id="dash-recent-body"></tbody>
+                    </table>
+                  </div>
+                </div>
+                <div class="dash-card grow">
+                  <div class="dash-card-head">
+                    <h2>الأكثر مبيعاً</h2>
+                  </div>
+                  <div class="table-wrap dash-table">
+                    <table class="table table-dense">
+                      <thead>
+                        <tr>
+                          <th>الصنف</th>
+                          <th>الكمية</th>
+                          <th>الإيراد</th>
+                        </tr>
+                      </thead>
+                      <tbody id="dash-top-body"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="welcome-card">
+              <h2>اختصارات سريعة</h2>
+              <p>من <strong>نقطة البيع</strong>: Enter يضيف أول نتيجة بحث · Escape يغلق النوافذ المنبثقة.</p>
+              <div class="welcome-actions">
+                <button type="button" class="btn btn-primary" data-go="pos">فتح نقطة البيع</button>
+                <button type="button" class="btn btn-ghost" data-go="inventory">إدارة المخزون</button>
+                <button type="button" class="btn btn-ghost" data-go="reports">تقارير المبيعات</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" id="page-pos" data-title="نقطة البيع">
+            <p class="kbd-hint">
+              <kbd>Enter</kbd> إضافة أول نتيجة · <kbd>Esc</kbd> إغلاق · الباركود يعمل في حقل البحث
+            </p>
+            <div class="pos-grid">
+              <div class="pos-panel">
+                <div class="field-row">
+                  <label class="field grow">
+                    <span class="field-label">بحث سريع (اسم / رمز / باركود)</span>
+                    <input type="search" id="pos-search" class="input input-lg" placeholder="ابدأ الكتابة أو امسح الباركود…" autocomplete="off" />
+                  </label>
+                </div>
+                <div class="product-chips" id="pos-results" aria-live="polite"></div>
+              </div>
+              <div class="pos-panel pos-cart">
+                <div class="panel-head">
+                  <h2>السلة</h2>
+                  <button type="button" class="btn btn-ghost btn-sm" id="pos-clear">إفراغ</button>
+                </div>
+                <div class="table-wrap cart-table-wrap">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>الصنف</th>
+                        <th>السعر</th>
+                        <th>الكمية</th>
+                        <th>الإجمالي</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="pos-cart-body"></tbody>
+                  </table>
+                </div>
+                <div class="cart-summary">
+                  <div class="summary-row">
+                    <span>الإجمالي</span>
+                    <strong id="pos-total">0.00</strong>
+                  </div>
+                  <label class="field">
+                    <span class="field-label">طريقة الدفع</span>
+                    <select id="pos-payment" class="input">
+                      <option>نقدي</option>
+                      <option>بطاقة</option>
+                      <option>تحويل</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">ملاحظات (اختياري)</span>
+                    <input type="text" id="pos-notes" class="input" placeholder="—" />
+                  </label>
+                  <button type="button" class="btn btn-primary btn-block" id="pos-checkout">إتمام البيع</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" id="page-inventory" data-title="المخزون">
+            <div class="toolbar">
+              <label class="field grow toolbar-search">
+                <span class="field-label sr-only">بحث</span>
+                <input type="search" id="inv-filter" class="input" placeholder="تصفية بالاسم أو SKU أو الباركود…" />
+              </label>
+              <button type="button" class="btn btn-ghost" id="inv-low-only" title="عرض الأصناف تحت حد التنبيه فقط">تنبيهات فقط</button>
+              <button type="button" class="btn btn-ghost" id="inv-export">تصدير CSV</button>
+              <button type="button" class="btn btn-ghost" id="inv-refresh">تحديث</button>
+            </div>
+            <div class="split-inv">
+              <div class="inv-table-card">
+                <div class="table-wrap">
+                  <table class="table table-dense">
+                    <thead>
+                      <tr>
+                        <th>SKU</th>
+                        <th>الاسم</th>
+                        <th>التصنيف</th>
+                        <th>السعر</th>
+                        <th>المخزون</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="products-body"></tbody>
+                  </table>
+                </div>
+              </div>
+              <aside class="inv-form-card">
+                <h2 class="card-title" id="inv-form-title">منتج جديد</h2>
+                <form id="product-form" class="form-stack">
+                  <input type="hidden" id="product-id" />
+                  <label class="field">
+                    <span class="field-label">الرمز (SKU)</span>
+                    <input id="sku" class="input" required />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">الاسم</span>
+                    <input id="name" class="input" required />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">التصنيف</span>
+                    <select id="category_id" class="input"></select>
+                  </label>
+                  <div class="field-row">
+                    <label class="field grow">
+                      <span class="field-label">سعر الوحدة</span>
+                      <input id="unit_price" class="input" type="number" step="0.01" min="0" required />
+                    </label>
+                    <label class="field grow">
+                      <span class="field-label">الكمية</span>
+                      <input id="stock_qty" class="input" type="number" step="0.01" min="0" required />
+                    </label>
+                  </div>
+                  <label class="field">
+                    <span class="field-label">حد إعادة الطلب</span>
+                    <input id="reorder_level" class="input" type="number" step="0.01" min="0" value="5" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">الباركود</span>
+                    <input id="barcode" class="input" placeholder="اختياري" />
+                  </label>
+                  <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">حفظ</button>
+                    <button type="button" class="btn btn-ghost" id="reset-form">تفريغ النموذج</button>
+                  </div>
+                </form>
+              </aside>
+            </div>
+          </section>
+
+          <section class="page" id="page-categories" data-title="التصنيفات">
+            <div class="cat-layout">
+              <form id="cat-add-form" class="card pad">
+                <h2 class="card-title">تصنيف جديد</h2>
+                <div class="field-row">
+                  <label class="field grow">
+                    <span class="field-label">الاسم</span>
+                    <input id="cat-new-name" class="input" required />
+                  </label>
+                  <button type="submit" class="btn btn-primary">إضافة</button>
+                </div>
+              </form>
+              <div class="card pad grow">
+                <h2 class="card-title">قائمة التصنيفات</h2>
+                <div class="table-wrap">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>الاسم</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="categories-body"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" id="page-sales" data-title="سجل المبيعات">
+            <div class="card pad">
+              <div class="toolbar" style="margin-bottom: 12px">
+                <h2 class="card-title" style="margin: 0">آخر الفواتير</h2>
+                <button type="button" class="btn btn-ghost" id="sales-refresh">تحديث</button>
+              </div>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>رقم</th>
+                      <th>التاريخ</th>
+                      <th>الإجمالي</th>
+                      <th>الدفع</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="sales-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" id="page-reports" data-title="التقارير">
+            <div class="card pad report-card">
+              <div class="report-toolbar">
+                <label class="field">
+                  <span class="field-label">من تاريخ</span>
+                  <input type="date" id="rep-from" class="input" />
+                </label>
+                <label class="field">
+                  <span class="field-label">إلى تاريخ</span>
+                  <input type="date" id="rep-to" class="input" />
+                </label>
+                <button type="button" class="btn btn-primary" id="rep-apply">عرض</button>
+                <button type="button" class="btn btn-ghost" id="rep-export">تصدير CSV</button>
+              </div>
+              <div class="report-summary" id="rep-summary"></div>
+              <div class="table-wrap" style="max-height: min(52vh, 520px)">
+                <table class="table table-dense">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>التاريخ</th>
+                      <th>الإجمالي</th>
+                      <th>الدفع</th>
+                      <th>ملاحظات</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rep-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" id="page-settings" data-title="الإعدادات">
+            <div class="settings-grid">
+              <form id="settings-form" class="card pad settings-card">
+                <h2 class="card-title">مظهر المتجر</h2>
+                <label class="field">
+                  <span class="field-label">اسم المحل (يظهر في الشريط والفاتورة)</span>
+                  <input type="text" id="set-store-name" class="input" />
+                </label>
+                <label class="field">
+                  <span class="field-label">رمز العملة (مثال: ر.س)</span>
+                  <input type="text" id="set-currency" class="input" maxlength="12" />
+                </label>
+                <label class="field">
+                  <span class="field-label">المظهر</span>
+                  <select id="set-theme" class="input">
+                    <option value="dark">داكن (افتراضي)</option>
+                    <option value="light">فاتح</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">حد تنبيه المخزون (أقل من هذا الرقم = تنبيه)</span>
+                  <input type="number" id="set-low-threshold" class="input" min="0" step="1" />
+                </label>
+                <button type="submit" class="btn btn-primary">حفظ الإعدادات</button>
+              </form>
+              <div class="card pad settings-hint">
+                <h2 class="card-title">نصائح</h2>
+                <ul class="hint-list">
+                  <li>التصدير يدعم Excel عبر ملفات CSV مع ترميم UTF-8.</li>
+                  <li>الطباعة تستخدم نافذة النظام الافتراضية.</li>
+                  <li>البيانات محفوظة محلياً في مجلد بيانات التطبيق.</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <div class="modal" id="modal" hidden>
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="modal-dialog" role="dialog" aria-modal="true">
+        <header class="modal-head">
+          <h2 id="modal-title">تفاصيل</h2>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost btn-sm" id="modal-print" hidden>طباعة</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-close-modal>إغلاق</button>
+          </div>
+        </header>
+        <div class="modal-body" id="modal-body"></div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+    <script>
+      window.__API_BASE__ = '';
+    </script>
+    <script src="js/web-api.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>

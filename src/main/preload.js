@@ -1,0 +1,41 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('api', {
+  settings: {
+    getAll: () => ipcRenderer.invoke('settings:getAll'),
+    patch: (partial) => ipcRenderer.invoke('settings:patch', partial)
+  },
+  dashboard: {
+    stats: () => ipcRenderer.invoke('dashboard:stats'),
+    overview: () => ipcRenderer.invoke('dashboard:overview')
+  },
+  reports: {
+    salesInRange: (from, to) => ipcRenderer.invoke('reports:salesInRange', from, to),
+    salesCsv: (from, to) => ipcRenderer.invoke('reports:salesCsv', from, to)
+  },
+  export: {
+    saveText: (payload) => ipcRenderer.invoke('export:saveText', payload),
+    productsCsv: () => ipcRenderer.invoke('products:exportCsv')
+  },
+  print: {
+    receipt: (saleId) => ipcRenderer.invoke('print:receipt', saleId)
+  },
+  products: {
+    list: () => ipcRenderer.invoke('products:list'),
+    search: (q) => ipcRenderer.invoke('products:search', q),
+    add: (row) => ipcRenderer.invoke('products:add', row),
+    update: (row) => ipcRenderer.invoke('products:update', row),
+    remove: (id) => ipcRenderer.invoke('products:remove', id)
+  },
+  categories: {
+    list: () => ipcRenderer.invoke('categories:list'),
+    add: (name) => ipcRenderer.invoke('categories:add', name),
+    update: (row) => ipcRenderer.invoke('categories:update', row),
+    remove: (id) => ipcRenderer.invoke('categories:remove', id)
+  },
+  sales: {
+    create: (payload) => ipcRenderer.invoke('sales:create', payload),
+    list: (limit) => ipcRenderer.invoke('sales:list', limit),
+    items: (saleId) => ipcRenderer.invoke('sales:items', saleId)
+  }
+});
