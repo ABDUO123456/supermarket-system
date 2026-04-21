@@ -46,6 +46,10 @@
             <span class="nav-icon">▦</span>
             <span>الموردين</span>
           </button>
+          <button type="button" class="nav-item" data-page="credit">
+            <span class="nav-icon">📝</span>
+            <span>دفتر الديون</span>
+          </button>
           <button type="button" class="nav-item" data-page="purchases">
             <span class="nav-icon">▧</span>
             <span>المشتريات</span>
@@ -374,6 +378,31 @@
                       </tr>
                     </thead>
                     <tbody id="suppliers-body"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" id="page-credit" data-title="الحسابات الائتمانية">
+            <div class="credit-grid">
+              <div class="card pad">
+                <div class="toolbar">
+                  <button type="button" class="btn btn-primary" id="credit-add">إضافة حساب ائتماني</button>
+                </div>
+                <div class="table-wrap">
+                  <table class="table table-dense">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>اسم العميل</th>
+                        <th>رقم الهاتف</th>
+                        <th>المبلغ المستحق</th>
+                        <th>تاريخ الإنشاء</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="credit-body"></tbody>
                   </table>
                 </div>
               </div>

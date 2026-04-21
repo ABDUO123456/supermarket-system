@@ -358,6 +358,12 @@ function runDispatch(getDb, channel, args = []) {
         )
         .all(saleId);
     }
+    case 'sales:remove': {
+      const id = args[0];
+      db.prepare('DELETE FROM sale_items WHERE sale_id = ?').run(id);
+      db.prepare('DELETE FROM sales WHERE id = ?').run(id);
+      return { ok: true };
+    }
     case 'suppliers:list':
       return db.prepare('SELECT * FROM suppliers ORDER BY name').all();
     case 'suppliers:add': {
@@ -462,6 +468,12 @@ function runDispatch(getDb, channel, args = []) {
         )
         .get(purchaseId);
     }
+    case 'purchases:remove': {
+      const id = args[0];
+      db.prepare('DELETE FROM purchase_items WHERE purchase_id = ?').run(id);
+      db.prepare('DELETE FROM purchases WHERE id = ?').run(id);
+      return { ok: true };
+    }
     case 'reports:purchasesInRange': {
       const from = args[0];
       const to = args[1];
@@ -501,6 +513,22 @@ function runDispatch(getDb, channel, args = []) {
       ];
       return lines.join('\n');
     }
+    case 'credit:list': {
+      return db.prepare('SELECT * FROM credit_accounts ORDER BY created_at DESC').all();
+    }
+    case 'credit:add': {
+      const row = args[0];
+      const stmt = db.prepare(
+        'INSERT INTO credit_accounts (customer_name, phone, amount_due, notes) VALUES (?, ?, ?, ?)'
+      );
+      const info = stmt.run(row.customer_name, row.phone || null, row.amount_due || 0, row.notes || null);
+      return { ok: true, id: info.lastInsertRowid };
+    }
+    case 'credit:remove': {
+      const id = args[0];
+      db.prepare('DELETE FROM credit_accounts WHERE id = ?').run(id);
+      return { ok: true };
+    }
     default:
       throw new Error(`قناة غير معروفة: ${channel}`);
   }
@@ -526,6 +554,7 @@ const DISPATCH_CHANNELS = [
   'sales:create',
   'sales:list',
   'sales:items',
+  'sales:remove',
   'suppliers:list',
   'suppliers:add',
   'suppliers:update',
@@ -534,6 +563,10 @@ const DISPATCH_CHANNELS = [
   'purchases:list',
   'purchases:items',
   'purchases:detail',
+  'purchases:remove',
+  'credit:list',
+  'credit:add',
+  'credit:remove',
   'reports:purchasesInRange',
   'reports:purchasesCsv'
 ];

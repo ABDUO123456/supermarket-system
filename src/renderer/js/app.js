@@ -117,6 +117,7 @@
     if (name === 'inventory') refreshInventory();
     if (name === 'categories') refreshCategories();
     if (name === 'suppliers') refreshSuppliers();
+    if (name === 'credit') refreshCredit();
     if (name === 'purchases') refreshPurchases();
     if (name === 'sales') refreshSales();
     if (name === 'reports') initReportDates();
@@ -163,9 +164,7 @@
         const rev = Number(p.revenue) || 0;
         const h = Math.round((rev / max) * 100);
         const short = String(p.day).slice(5);
-        return `<div class="bar-col" title="${escapeHtml(p.day)}: ${formatMoney(rev)}"><div class="bar" style="height:${h}%"></div><span class="bar-lbl">${escapeHtml(
-          short
-        )}</span></div>`;
+        return `<div class="bar-col" title="${escapeHtml(p.day)}: ${formatMoney(rev)}"><div class="bar" style="height:${h}%"></div><span class="bar-lbl">${escapeHtml(short)}</span></div>`;
       })
       .join('');
   }
@@ -398,7 +397,6 @@
       }
     });
 
-    // Payment method change handler
     $('pos-payment').addEventListener('change', () => {
       const paymentMethod = $('pos-payment').value;
       const paymentDetails = $('payment-details');
@@ -411,7 +409,6 @@
       }
     });
 
-    // Amount received input handler
     $('pos-received').addEventListener('input', () => {
       const received = Number($('pos-received').value) || 0;
       const total = cartTotal();
@@ -419,18 +416,15 @@
       $('pos-change').textContent = formatMoney(change);
     });
 
-    // Barcode input handler
     $('pos-barcode').addEventListener('keydown', async (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         const barcode = $('pos-barcode').value.trim();
         if (!barcode) return;
-
         try {
           const result = await api.scanBarcode(barcode);
           if (result.ok && result.result) {
             addToCart(result.result);
-            $('pos-barcode').value = '';
             toast('تم إضافة المنتج من الباركود');
           } else {
             toast('لم يتم العثور على منتج بهذا الباركود', true);
@@ -438,6 +432,7 @@
         } catch (error) {
           toast('خطأ في مسح الباركود', true);
         }
+        $('pos-barcode').value = '';
       }
     });
 
@@ -459,7 +454,6 @@
       const received = Number($('pos-received').value) || 0;
       const total = cartTotal();
 
-      // Validate cash payment
       if (paymentMethod === 'نقدي' && received < total) {
         toast('المبلغ المستلم أقل من الإجمالي', true);
         return;
@@ -863,7 +857,10 @@
           <td>${escapeHtml(p.purchased_at)}</td>
           <td>${escapeHtml(p.supplier_name || 'غير محدد')}</td>
           <td>${formatMoney(p.total)}</td>
-          <td><button type="button" class="link-btn" data-view-pur="${p.id}">عرض</button></td>
+          <td>
+            <button type="button" class="link-btn" data-view-pur="${p.id}">عرض</button>
+            <button type="button" class="link-btn danger" data-del-pur="${p.id}">حذف</button>
+          </td>
         </tr>`;
       })
       .join('');
@@ -873,6 +870,103 @@
         const pid = Number(b.getAttribute('data-view-pur'));
         openPurchaseDetailModal(pid);
       });
+    });
+    tbody.querySelectorAll('[data-del-pur]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const pid = Number(b.getAttribute('data-del-pur'));
+        if (!confirm('حذف هذه المشتريات؟')) return;
+        const res = await api.purchases.remove(pid);
+        if (!res.ok) {
+          toast(res.error || 'تعذر الحذف', true);
+          return;
+        }
+        toast('تم الحذف');
+        await refreshPurchases();
+      });
+    });
+  }
+
+  async function refreshCredit() {
+    const rows = await safeInvoke(() => api.credit.list(), 'تعذر تحميل الحسابات الائتمانية');
+    const tbody = $('credit-body');
+    tbody.innerHTML = rows
+      .map((c) => `
+      <tr>
+        <td>${c.id}</td>
+        <td>${escapeHtml(c.customer_name)}</td>
+        <td>${escapeHtml(c.phone || '')}</td>
+        <td>${formatMoney(c.amount_due)}</td>
+        <td>${escapeHtml(c.created_at)}</td>
+        <td>
+          <button type="button" class="link-btn danger" data-del-credit="${c.id}">حذف</button>
+        </td>
+      </tr>`)
+      .join('');
+
+    tbody.querySelectorAll('[data-del-credit]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const id = Number(b.getAttribute('data-del-credit'));
+        if (!confirm('حذف هذا الحساب الائتماني؟')) return;
+        const res = await api.credit.remove(id);
+        if (!res.ok) {
+          toast(res.error || 'تعذر الحذف', true);
+          return;
+        }
+        toast('تم الحذف');
+        await refreshCredit();
+      });
+    });
+  }
+
+  function bindCredit() {
+    $('credit-add').addEventListener('click', () => openCreditModal());
+  }
+
+  function openCreditModal() {
+    const html = `
+      <div class="credit-modal">
+        <form id="credit-form" class="card pad">
+          <h2 class="card-title">إضافة حساب ائتماني</h2>
+          <label class="field">
+            <span class="field-label">اسم العميل</span>
+            <input id="credit-name" class="input" required />
+          </label>
+          <label class="field">
+            <span class="field-label">رقم الهاتف</span>
+            <input id="credit-phone" class="input" />
+          </label>
+          <label class="field">
+            <span class="field-label">المبلغ المستحق</span>
+            <input id="credit-amount" type="number" class="input" min="0" step="0.01" required />
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">إضافة</button>
+            <button type="button" class="btn btn-ghost" onclick="this.closest('.modal').remove()">إلغاء</button>
+          </div>
+        </form>
+      </div>
+    `;
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = html;
+    document.body.appendChild(modal);
+    modal.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const customer_name = $('credit-name').value.trim();
+      const phone = $('credit-phone').value.trim();
+      const amount_due = parseFloat($('credit-amount').value) || 0;
+      if (!customer_name) {
+        toast('اسم العميل مطلوب', true);
+        return;
+      }
+      const res = await api.credit.add({ customer_name, phone, amount_due });
+      if (!res.ok) {
+        toast(res.error || 'فشل الإضافة', true);
+        return;
+      }
+      toast('تمت الإضافة');
+      modal.remove();
+      await refreshCredit();
     });
   }
 
@@ -1003,7 +1097,7 @@
         toast('لا توجد منتجات مطابقة، يمكنك إضافة منتج جديد', true);
         return;
       }
-      const p = products[0]; // أول نتيجة
+      const p = products[0];
       purState.cart.push({ product_id: p.id, name: p.name, qty: 1, unit_cost: 0 });
       $('pur-search').value = '';
       renderCart();
@@ -1016,32 +1110,25 @@
         toast('أدخل اسم المنتج أولاً', true);
         return;
       }
-      
-      // Generate barcode for new product
       const barcode = 'P' + Date.now().toString().slice(-8);
-      
-      // Create new product
       const newProduct = {
         sku: 'SKU-' + Date.now(),
         name: q,
-        category_id: 1, // Default category
+        category_id: 1,
         unit_price: 0,
         stock_qty: 0,
         barcode: barcode,
         reorder_level: 5
       };
-      
       const result = await api.products.add(newProduct);
       if (!result.id) {
         toast('فشل في إضافة المنتج الجديد', true);
         return;
       }
-      
-      // Add to cart
-      purState.cart.push({ 
-        product_id: result.id, 
-        name: q, 
-        qty: 1, 
+      purState.cart.push({
+        product_id: result.id,
+        name: q,
+        qty: 1,
         unit_cost: 0,
         is_new: true,
         barcode: barcode
@@ -1062,21 +1149,19 @@
       const baseNotes = $('pur-notes').value;
       const paymentAmount = Number($('pur-payment').value) || 0;
       const remainingAmount = Number($('pur-remaining').value) || 0;
-      
-      // Build enhanced notes with payment and debt information
+
       let notes = baseNotes;
       if (paymentAmount > 0 || remainingAmount > 0) {
         const paymentInfo = `مبلغ الدفع: ${formatMoney(paymentAmount)}, المبلغ المتبقي: ${formatMoney(remainingAmount)}`;
         notes = notes ? `${notes}\n${paymentInfo}` : paymentInfo;
       }
-      
-      // Add information about new products
+
       const newProducts = purState.cart.filter(it => it.is_new);
       if (newProducts.length > 0) {
         const newProductInfo = `منتجات جديدة: ${newProducts.map(p => `${p.name} (باركود: ${p.barcode})`).join(', ')}`;
         notes = notes ? `${notes}\n${newProductInfo}` : newProductInfo;
       }
-      
+
       const items = purState.cart.map(it => ({
         product_id: it.product_id,
         qty: it.qty,
@@ -1197,7 +1282,10 @@
         <td>${escapeHtml(s.sold_at)}</td>
         <td>${formatMoney(s.total)}</td>
         <td>${escapeHtml(s.payment_method || '')}</td>
-        <td><button type="button" class="link-btn" data-sale="${s.id}">التفاصيل</button></td>
+        <td>
+          <button type="button" class="link-btn" data-sale="${s.id}">التفاصيل</button>
+          <button type="button" class="link-btn danger" data-del-sale="${s.id}">حذف</button>
+        </td>
       </tr>`
       )
       .join('');
@@ -1205,6 +1293,19 @@
       b.addEventListener('click', async () => {
         const id = Number(b.getAttribute('data-sale'));
         await openSaleDetailModal(id);
+      });
+    });
+    tbody.querySelectorAll('[data-del-sale]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const id = Number(b.getAttribute('data-del-sale'));
+        if (!confirm('حذف هذه الفاتورة؟')) return;
+        const res = await api.sales.remove(id);
+        if (!res.ok) {
+          toast(res.error || 'تعذر الحذف', true);
+          return;
+        }
+        toast('تم الحذف');
+        await refreshSales();
       });
     });
   }
@@ -1269,12 +1370,6 @@
             <span class="field-label">ملاحظات (اختياري)</span>
             <input type="text" id="sales-notes" class="input" placeholder="—" />
           </label>
-          <div class="pos-decoration">
-            <div class="decorative-line"></div>
-            <div class="decorative-dots">
-              <span></span><span></span><span></span>
-            </div>
-          </div>
           <div class="field-row">
             <button type="submit" class="btn btn-primary">حفظ المبيعات</button>
             <button type="button" class="btn btn-ghost" data-close-modal>إلغاء</button>
@@ -1288,10 +1383,12 @@
 
   function bindSalesForm() {
     const salesState = { cart: [] };
+
     const updateTotal = () => {
       const total = salesState.cart.reduce((sum, it) => sum + (it.qty * it.unit_price), 0);
       $('sales-total').textContent = formatMoney(total);
     };
+
     const renderCart = () => {
       const tbody = $('sales-cart-body');
       tbody.innerHTML = salesState.cart
@@ -1325,7 +1422,6 @@
       });
     };
 
-    // Payment method change handler
     $('sales-payment').addEventListener('change', () => {
       const paymentMethod = $('sales-payment').value;
       const paymentDetails = $('sales-payment-details');
@@ -1338,7 +1434,6 @@
       }
     });
 
-    // Amount received input handler
     $('sales-received').addEventListener('input', () => {
       const received = Number($('sales-received').value) || 0;
       const total = salesState.cart.reduce((sum, it) => sum + (it.qty * it.unit_price), 0);
@@ -1346,13 +1441,11 @@
       $('sales-change').textContent = formatMoney(change);
     });
 
-    // Barcode input handler
     $('sales-barcode').addEventListener('keydown', async (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         const barcode = $('sales-barcode').value.trim();
         if (!barcode) return;
-
         try {
           const result = await api.scanBarcode(barcode);
           if (result.ok && result.result) {
@@ -1368,7 +1461,6 @@
                 unit_price: result.result.unit_price
               });
             }
-            $('sales-barcode').value = '';
             renderCart();
             updateTotal();
             toast('تم إضافة المنتج من الباركود');
@@ -1378,6 +1470,7 @@
         } catch (error) {
           toast('خطأ في مسح الباركود', true);
         }
+        $('sales-barcode').value = '';
       }
     });
 
@@ -1418,7 +1511,6 @@
       const received = Number($('sales-received').value) || 0;
       const total = salesState.cart.reduce((sum, it) => sum + (it.qty * it.unit_price), 0);
 
-      // Validate cash payment
       if (paymentMethod === 'نقدي' && received < total) {
         toast('المبلغ المستلم أقل من الإجمالي', true);
         return;
@@ -1563,6 +1655,7 @@
     bindInventory();
     bindCategories();
     bindSuppliers();
+    bindCredit();
     bindPurchases();
     bindModal();
     bindSales();
@@ -1574,4 +1667,5 @@
   }
 
   init();
+
 })();

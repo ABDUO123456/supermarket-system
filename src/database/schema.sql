@@ -62,6 +62,15 @@ CREATE TABLE IF NOT EXISTS sale_items (
   line_total REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS credit_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_name TEXT NOT NULL,
+  phone TEXT,
+  amount_due REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  notes TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
 CREATE INDEX IF NOT EXISTS idx_sales_sold_at ON sales(sold_at);
