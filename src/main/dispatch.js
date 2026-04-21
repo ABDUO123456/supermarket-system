@@ -281,6 +281,9 @@ function runDispatch(getDb, channel, args = []) {
       if (items.length === 0) return { ok: false, error: 'السلة فارغة' };
       const payment_method = payload.payment_method || 'نقدي';
       const notes = payload.notes ? String(payload.notes) : null;
+      const received_amount = payload.received_amount ? Number(payload.received_amount) : null;
+      const change_amount = payload.change_amount ? Number(payload.change_amount) : null;
+
       const getProduct = db.prepare('SELECT id, unit_price, stock_qty, name FROM products WHERE id = ?');
       const qtyByProduct = new Map();
       for (const it of items) {
@@ -300,6 +303,12 @@ function runDispatch(getDb, channel, args = []) {
         normalized.push({ product_id: pid, qty, unit_price: p.unit_price, line_total: line });
       }
       if (normalized.length === 0) return { ok: false, error: 'بيانات غير صالحة' };
+
+      // Validate cash payment
+      if (payment_method === 'نقدي' && received_amount !== null && received_amount < total) {
+        return { ok: false, error: 'المبلغ المستلم أقل من الإجمالي' };
+      }
+
       const insertSale = db.prepare(
         'INSERT INTO sales (total, payment_method, notes) VALUES (?, ?, ?)'
       );
@@ -317,7 +326,13 @@ function runDispatch(getDb, channel, args = []) {
         return saleId;
       });
       const saleId = run();
-      return { ok: true, saleId, total };
+      return {
+        ok: true,
+        saleId,
+        total,
+        received_amount,
+        change_amount
+      };
     }
     case 'sales:list': {
       const limit = args[0] ?? 100;
@@ -343,6 +358,149 @@ function runDispatch(getDb, channel, args = []) {
         )
         .all(saleId);
     }
+    case 'suppliers:list':
+      return db.prepare('SELECT * FROM suppliers ORDER BY name').all();
+    case 'suppliers:add': {
+      const row = args[0];
+      const stmt = db.prepare(
+        'INSERT INTO suppliers (name, contact, address) VALUES (?, ?, ?)'
+      );
+      const info = stmt.run(row.name, row.contact || null, row.address || null);
+      return { id: info.lastInsertRowid };
+    }
+    case 'suppliers:update': {
+      const row = args[0];
+      db.prepare(
+        'UPDATE suppliers SET name = ?, contact = ?, address = ? WHERE id = ?'
+      ).run(row.name, row.contact || null, row.address || null, row.id);
+      return { ok: true };
+    }
+    case 'suppliers:remove': {
+      const id = args[0];
+      const used = db.prepare('SELECT COUNT(*) AS n FROM purchases WHERE supplier_id = ?').get(id).n;
+      if (used > 0) return { ok: false, error: 'لا يمكن الحذف: يوجد مشتريات مرتبطة بهذا المورد' };
+      db.prepare('DELETE FROM suppliers WHERE id = ?').run(id);
+      return { ok: true };
+    }
+    case 'purchases:create': {
+      const payload = args[0];
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      if (items.length === 0) return { ok: false, error: 'السلة فارغة' };
+      const supplier_id = payload.supplier_id ? Number(payload.supplier_id) : null;
+      const notes = payload.notes ? String(payload.notes) : null;
+      const getProduct = db.prepare('SELECT id, name FROM products WHERE id = ?');
+      const qtyByProduct = new Map();
+      for (const it of items) {
+        const pid = Number(it.product_id);
+        const qty = Number(it.qty);
+        const cost = Number(it.unit_cost);
+        if (!pid || !(qty > 0) || !(cost >= 0)) continue;
+        qtyByProduct.set(pid, { qty: (qtyByProduct.get(pid)?.qty || 0) + qty, cost });
+      }
+      let total = 0;
+      const normalized = [];
+      for (const [pid, { qty, cost }] of qtyByProduct) {
+        const p = getProduct.get(pid);
+        if (!p) return { ok: false, error: 'منتج غير موجود' };
+        const line = qty * cost;
+        total += line;
+        normalized.push({ product_id: pid, qty, unit_cost: cost, line_total: line });
+      }
+      if (normalized.length === 0) return { ok: false, error: 'بيانات غير صالحة' };
+      const insertPurchase = db.prepare(
+        'INSERT INTO purchases (supplier_id, total, notes) VALUES (?, ?, ?)'
+      );
+      const insertItem = db.prepare(
+        `INSERT INTO purchase_items (purchase_id, product_id, qty, unit_cost, line_total)
+         VALUES (?, ?, ?, ?, ?)`
+      );
+      const incStock = db.prepare('UPDATE products SET stock_qty = stock_qty + ? WHERE id = ?');
+      const run = db.transaction(() => {
+        const { lastInsertRowid: purchaseId } = insertPurchase.run(supplier_id, total, notes);
+        for (const row of normalized) {
+          insertItem.run(purchaseId, row.product_id, row.qty, row.unit_cost, row.line_total);
+          incStock.run(row.qty, row.product_id);
+        }
+        return purchaseId;
+      });
+      const purchaseId = run();
+      return { ok: true, purchaseId, total };
+    }
+    case 'purchases:list': {
+      const limit = args[0] ?? 100;
+      const lim = Math.min(500, Math.max(1, Number(limit) || 100));
+      return db
+        .prepare(
+          `SELECT p.id, p.purchased_at, p.total, p.notes, s.name AS supplier_name
+           FROM purchases p
+           LEFT JOIN suppliers s ON s.id = p.supplier_id
+           ORDER BY p.purchased_at DESC
+           LIMIT ?`
+        )
+        .all(lim);
+    }
+    case 'purchases:items': {
+      const purchaseId = args[0];
+      return db
+        .prepare(
+          `SELECT pi.*, pr.name AS product_name, pr.sku
+           FROM purchase_items pi
+           JOIN products pr ON pr.id = pi.product_id
+           WHERE pi.purchase_id = ?
+           ORDER BY pi.id`
+        )
+        .all(purchaseId);
+    }
+    case 'purchases:detail': {
+      const purchaseId = args[0];
+      return db
+        .prepare(
+          `SELECT p.*, s.name AS supplier_name
+           FROM purchases p
+           LEFT JOIN suppliers s ON s.id = p.supplier_id
+           WHERE p.id = ?`
+        )
+        .get(purchaseId);
+    }
+    case 'reports:purchasesInRange': {
+      const from = args[0];
+      const to = args[1];
+      const f = String(from || '').slice(0, 10);
+      const t = String(to || '').slice(0, 10);
+      if (!f || !t) return [];
+      return db
+        .prepare(
+          `SELECT p.id, p.purchased_at, p.total, p.notes, s.name AS supplier_name
+           FROM purchases p
+           LEFT JOIN suppliers s ON s.id = p.supplier_id
+           WHERE date(p.purchased_at, 'localtime') BETWEEN ? AND ?
+           ORDER BY p.purchased_at DESC`
+        )
+        .all(f, t);
+    }
+    case 'reports:purchasesCsv': {
+      const from = args[0];
+      const to = args[1];
+      const f = String(from || '').slice(0, 10);
+      const t = String(to || '').slice(0, 10);
+      const rows = db
+        .prepare(
+          `SELECT p.id, p.purchased_at, p.total, p.notes, s.name AS supplier_name
+           FROM purchases p
+           LEFT JOIN suppliers s ON s.id = p.supplier_id
+           WHERE date(p.purchased_at, 'localtime') BETWEEN ? AND ?
+           ORDER BY p.purchased_at DESC`
+        )
+        .all(f, t);
+      const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const lines = [
+        '\ufeffid,purchased_at,total,supplier_name,notes',
+        ...rows.map((r) =>
+          [r.id, r.purchased_at, r.total, r.supplier_name || '', r.notes || ''].map(esc).join(',')
+        )
+      ];
+      return lines.join('\n');
+    }
     default:
       throw new Error(`قناة غير معروفة: ${channel}`);
   }
@@ -367,7 +525,17 @@ const DISPATCH_CHANNELS = [
   'categories:remove',
   'sales:create',
   'sales:list',
-  'sales:items'
+  'sales:items',
+  'suppliers:list',
+  'suppliers:add',
+  'suppliers:update',
+  'suppliers:remove',
+  'purchases:create',
+  'purchases:list',
+  'purchases:items',
+  'purchases:detail',
+  'reports:purchasesInRange',
+  'reports:purchasesCsv'
 ];
 
 module.exports = { runDispatch, DISPATCH_CHANNELS, getSetting };

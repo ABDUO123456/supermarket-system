@@ -31,9 +31,9 @@ function buildReceiptHtml(getDb, saleId) {
     .map(
       (it) => `<tr>
         <td>${esc(it.name)}</td>
-        <td>${Number(it.qty).toLocaleString('ar-SA')}</td>
-        <td>${Number(it.unit_price).toLocaleString('ar-SA', { minimumFractionDigits: 2 })}</td>
-        <td>${Number(it.line_total).toLocaleString('ar-SA', { minimumFractionDigits: 2 })}</td>
+        <td>${Number(it.qty).toLocaleString('ar-DZ')}</td>
+        <td>${Number(it.unit_price).toLocaleString('ar-DZ', { minimumFractionDigits: 2 })}</td>
+        <td>${Number(it.line_total).toLocaleString('ar-DZ', { minimumFractionDigits: 2 })}</td>
       </tr>`
     )
     .join('');
@@ -60,7 +60,7 @@ function buildReceiptHtml(getDb, saleId) {
     <thead><tr><th>الصنف</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead>
     <tbody>${rowsHtml}</tbody>
   </table>
-  <p class="total">الإجمالي: ${Number(sale.total).toLocaleString('ar-SA', { minimumFractionDigits: 2 })} ${esc(
+  <p class="total">الإجمالي: ${Number(sale.total).toLocaleString('ar-DZ', { minimumFractionDigits: 2 })} ${esc(
     currency
   )}</p>
 </body>

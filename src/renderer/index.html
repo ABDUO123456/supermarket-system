@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="rtl">
+<html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -41,6 +41,14 @@
           <button type="button" class="nav-item" data-page="categories">
             <span class="nav-icon">◇</span>
             <span>التصنيفات</span>
+          </button>
+          <button type="button" class="nav-item" data-page="suppliers">
+            <span class="nav-icon">▦</span>
+            <span>الموردين</span>
+          </button>
+          <button type="button" class="nav-item" data-page="purchases">
+            <span class="nav-icon">▧</span>
+            <span>المشتريات</span>
           </button>
           <button type="button" class="nav-item" data-page="sales">
             <span class="nav-icon">☰</span>
@@ -196,10 +204,30 @@
                       <option>تحويل</option>
                     </select>
                   </label>
+                  <div class="payment-details" id="payment-details" style="display: none;">
+                    <label class="field">
+                      <span class="field-label">المبلغ المستلم</span>
+                      <input type="number" id="pos-received" class="input" placeholder="0.00" min="0" step="0.01" />
+                    </label>
+                    <div class="change-display">
+                      <span class="change-label">الباقي:</span>
+                      <strong id="pos-change" class="change-amount">0.00</strong>
+                    </div>
+                  </div>
+                  <label class="field">
+                    <span class="field-label">كود الباركود (اختياري)</span>
+                    <input type="text" id="pos-barcode" class="input" placeholder="امسح الباركود أو اكتبه" />
+                  </label>
                   <label class="field">
                     <span class="field-label">ملاحظات (اختياري)</span>
                     <input type="text" id="pos-notes" class="input" placeholder="—" />
                   </label>
+                  <div class="pos-decoration">
+                    <div class="decorative-line"></div>
+                    <div class="decorative-dots">
+                      <span></span><span></span><span></span>
+                    </div>
+                  </div>
                   <button type="button" class="btn btn-primary btn-block" id="pos-checkout">إتمام البيع</button>
                 </div>
               </div>
@@ -307,25 +335,99 @@
             </div>
           </section>
 
-          <section class="page" id="page-sales" data-title="سجل المبيعات">
-            <div class="card pad">
-              <div class="toolbar" style="margin-bottom: 12px">
-                <h2 class="card-title" style="margin: 0">آخر الفواتير</h2>
-                <button type="button" class="btn btn-ghost" id="sales-refresh">تحديث</button>
+          <section class="page" id="page-suppliers" data-title="الموردين">
+            <div class="sup-layout">
+              <form id="sup-add-form" class="card pad">
+                <h2 class="card-title">مورد جديد</h2>
+                <div class="field-row">
+                  <label class="field grow">
+                    <span class="field-label">الاسم</span>
+                    <input id="sup-new-name" class="input" required />
+                  </label>
+                </div>
+                <div class="field-row">
+                  <label class="field grow">
+                    <span class="field-label">الاتصال</span>
+                    <input id="sup-new-contact" class="input" />
+                  </label>
+                  <label class="field grow">
+                    <span class="field-label">العنوان</span>
+                    <input id="sup-new-address" class="input" />
+                  </label>
+                </div>
+                <div class="field-row">
+                  <button type="submit" class="btn btn-primary">إضافة</button>
+                  <button type="button" class="btn btn-ghost" id="sup-reset-form">تفريغ النموذج</button>
+                </div>
+              </form>
+              <div class="card pad grow">
+                <h2 class="card-title">قائمة الموردين</h2>
+                <div class="table-wrap">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>الاسم</th>
+                        <th>الاتصال</th>
+                        <th>العنوان</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="suppliers-body"></tbody>
+                  </table>
+                </div>
               </div>
-              <div class="table-wrap">
-                <table class="table">
-                  <thead>
-                    <tr>
-                      <th>رقم</th>
-                      <th>التاريخ</th>
-                      <th>الإجمالي</th>
-                      <th>الدفع</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody id="sales-body"></tbody>
-                </table>
+            </div>
+          </section>
+
+          <section class="page" id="page-purchases" data-title="المشتريات">
+            <div class="purchases-grid">
+              <div class="card pad">
+                <div class="toolbar">
+                  <button type="button" class="btn btn-primary" id="pur-add">إضافة مشتريات</button>
+                </div>
+                <div class="table-wrap">
+                  <table class="table table-dense">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>التاريخ</th>
+                        <th>المورد</th>
+                        <th>الإجمالي</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="pur-body"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" id="page-sales" data-title="سجل المبيعات">
+            <div class="sales-grid">
+              <div class="card pad">
+                <div class="toolbar">
+                  <button type="button" class="btn btn-primary" id="sales-add">إضافة مبيعات</button>
+                </div>
+                <div class="toolbar" style="margin-bottom: 12px">
+                  <h2 class="card-title" style="margin: 0">آخر الفواتير</h2>
+                  <button type="button" class="btn btn-ghost" id="sales-refresh">تحديث</button>
+                </div>
+                <div class="table-wrap">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>رقم</th>
+                        <th>التاريخ</th>
+                        <th>الإجمالي</th>
+                        <th>الدفع</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="sales-body"></tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </section>
@@ -333,6 +435,13 @@
           <section class="page" id="page-reports" data-title="التقارير">
             <div class="card pad report-card">
               <div class="report-toolbar">
+                <label class="field">
+                  <span class="field-label">نوع التقرير</span>
+                  <select id="rep-type" class="input">
+                    <option value="sales">المبيعات</option>
+                    <option value="purchases">المشتريات</option>
+                  </select>
+                </label>
                 <label class="field">
                   <span class="field-label">من تاريخ</span>
                   <input type="date" id="rep-from" class="input" />

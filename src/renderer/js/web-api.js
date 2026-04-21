@@ -31,6 +31,7 @@
     },
     reports: {
       salesInRange: (from, to) => rpc('reports:salesInRange', from, to),
+      purchasesInRange: (from, to) => rpc('reports:purchasesInRange', from, to),
       salesCsv: (from, to) => rpc('reports:salesCsv', from, to)
     },
     export: {
@@ -75,6 +76,7 @@
         return { ok: true };
       }
     },
+    scanBarcode: (barcode) => rpc('scan:barcode', barcode),
     products: {
       list: () => rpc('products:list'),
       search: (q) => rpc('products:search', q),
@@ -92,6 +94,24 @@
       create: (payload) => rpc('sales:create', payload),
       list: (limit) => rpc('sales:list', limit),
       items: (saleId) => rpc('sales:items', saleId)
+    },
+    purchases: {
+      create: (payload) => rpc('purchases:create', payload),
+      list: () => rpc('purchases:list'),
+      items: (purchaseId) => rpc('purchases:items', purchaseId),
+      detail: (purchaseId) => rpc('purchases:detail', purchaseId)
+    },
+    suppliers: {
+      list: () => rpc('suppliers:list'),
+      add: (row) => rpc('suppliers:add', row),
+      update: (row) => rpc('suppliers:update', row),
+      remove: (id) => rpc('suppliers:remove', id)
+    },
+    categories: {
+      list: () => rpc('categories:list'),
+      add: (name) => rpc('categories:add', name),
+      update: (row) => rpc('categories:update', row),
+      remove: (id) => rpc('categories:remove', id)
     }
   };
 })();

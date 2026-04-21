@@ -13,7 +13,7 @@
     posResults: [],
     settings: {
       store_name: 'سوبر ماركت',
-      currency: 'ر.س',
+      currency: 'دج',
       theme: 'dark',
       low_stock_threshold: '10'
     },
@@ -21,12 +21,12 @@
   };
 
   function currencyLabel() {
-    return state.settings.currency || 'ر.س';
+    return state.settings.currency || 'دج';
   }
 
   function formatMoney(n) {
     const v = Number(n) || 0;
-    return `${v.toLocaleString('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currencyLabel()}`;
+    return `${v.toLocaleString('ar-DZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currencyLabel()}`;
   }
 
   function escapeHtml(s) {
@@ -116,6 +116,8 @@
     if (name === 'dashboard') refreshDashboard();
     if (name === 'inventory') refreshInventory();
     if (name === 'categories') refreshCategories();
+    if (name === 'suppliers') refreshSuppliers();
+    if (name === 'purchases') refreshPurchases();
     if (name === 'sales') refreshSales();
     if (name === 'reports') initReportDates();
     if (name === 'pos') {
@@ -146,7 +148,7 @@
   function updateClock() {
     const now = new Date();
     const opts = { weekday: 'long', hour: '2-digit', minute: '2-digit' };
-    $('clock-pill').textContent = now.toLocaleString('ar-SA', opts);
+    $('clock-pill').textContent = now.toLocaleString('ar-DZ', opts);
   }
 
   function renderChart7(points) {
@@ -204,7 +206,7 @@
         .map(
           (p) => `<tr>
           <td>${escapeHtml(p.name)}</td>
-          <td>${Number(p.units).toLocaleString('ar-SA')}</td>
+          <td>${Number(p.units).toLocaleString('ar-DZ')}</td>
           <td>${formatMoney(p.revenue)}</td>
         </tr>`
         )
@@ -224,7 +226,7 @@
         (it) => `<tr>
         <td>${escapeHtml(it.product_name)}</td>
         <td>${escapeHtml(it.sku)}</td>
-        <td>${Number(it.qty).toLocaleString('ar-SA')}</td>
+        <td>${Number(it.qty).toLocaleString('ar-DZ')}</td>
         <td>${formatMoney(it.unit_price)}</td>
         <td>${formatMoney(it.line_total)}</td>
       </tr>`
@@ -368,7 +370,7 @@
       <button type="button" class="chip" data-add="${p.id}">
         <div>
           <div class="chip-title">${escapeHtml(p.name)}</div>
-          <div class="chip-meta">${escapeHtml(p.sku)} · مخزون ${Number(p.stock_qty).toLocaleString('ar-SA')}</div>
+          <div class="chip-meta">${escapeHtml(p.sku)} · مخزون ${Number(p.stock_qty).toLocaleString('ar-DZ')}</div>
         </div>
         <div class="chip-price">${formatMoney(p.unit_price)}</div>
       </button>`
@@ -395,38 +397,112 @@
         if (state.page === 'pos') addFirstSearchResult();
       }
     });
+
+    // Payment method change handler
+    $('pos-payment').addEventListener('change', () => {
+      const paymentMethod = $('pos-payment').value;
+      const paymentDetails = $('payment-details');
+      if (paymentMethod === 'نقدي') {
+        paymentDetails.style.display = 'block';
+      } else {
+        paymentDetails.style.display = 'none';
+        $('pos-received').value = '';
+        $('pos-change').textContent = '0.00';
+      }
+    });
+
+    // Amount received input handler
+    $('pos-received').addEventListener('input', () => {
+      const received = Number($('pos-received').value) || 0;
+      const total = cartTotal();
+      const change = Math.max(0, received - total);
+      $('pos-change').textContent = formatMoney(change);
+    });
+
+    // Barcode input handler
+    $('pos-barcode').addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const barcode = $('pos-barcode').value.trim();
+        if (!barcode) return;
+
+        try {
+          const result = await api.scanBarcode(barcode);
+          if (result.ok && result.result) {
+            addToCart(result.result);
+            $('pos-barcode').value = '';
+            toast('تم إضافة المنتج من الباركود');
+          } else {
+            toast('لم يتم العثور على منتج بهذا الباركود', true);
+          }
+        } catch (error) {
+          toast('خطأ في مسح الباركود', true);
+        }
+      }
+    });
+
     $('pos-clear').addEventListener('click', () => {
       state.cart = [];
       renderPosCart();
+      $('pos-received').value = '';
+      $('pos-change').textContent = '0.00';
+      $('pos-barcode').value = '';
     });
+
     $('pos-checkout').addEventListener('click', async () => {
       if (!state.cart.length) {
         toast('السلة فارغة', true);
         return;
       }
+
+      const paymentMethod = $('pos-payment').value;
+      const received = Number($('pos-received').value) || 0;
+      const total = cartTotal();
+
+      // Validate cash payment
+      if (paymentMethod === 'نقدي' && received < total) {
+        toast('المبلغ المستلم أقل من الإجمالي', true);
+        return;
+      }
+
       const payload = {
-        payment_method: $('pos-payment').value,
+        payment_method: paymentMethod,
+        received_amount: paymentMethod === 'نقدي' ? received : null,
+        change_amount: paymentMethod === 'نقدي' ? Math.max(0, received - total) : null,
         notes: $('pos-notes').value.trim() || null,
         items: state.cart.map((l) => ({ product_id: l.product_id, qty: l.qty }))
       };
+
       const res = await api.sales.create(payload);
       if (!res.ok) {
         toast(res.error || 'فشل البيع', true);
         return;
       }
+
+      const changeText = paymentMethod === 'نقدي' && res.change_amount > 0
+        ? `<p><strong>الباقي:</strong> ${formatMoney(res.change_amount)}</p>`
+        : '';
+
       toast(`تمت الفاتورة — ${formatMoney(res.total)}`);
       const saleId = res.saleId;
       state.cart = [];
       $('pos-notes').value = '';
+      $('pos-received').value = '';
+      $('pos-change').textContent = '0.00';
+      $('pos-barcode').value = '';
       renderPosCart();
       search.value = '';
       $('pos-results').innerHTML = '';
       state.posResults = [];
+
       openModal(
         'تم إتمام البيع',
-        `<p class="muted">يمكنك طباعة نسخة للعميل.</p><p><strong>الإجمالي:</strong> ${formatMoney(res.total)}</p>`,
+        `<p class="muted">يمكنك طباعة نسخة للعميل.</p>
+         <p><strong>الإجمالي:</strong> ${formatMoney(res.total)}</p>
+         ${changeText}`,
         saleId
       );
+
       if (state.page === 'dashboard') refreshDashboard();
     });
   }
@@ -452,7 +528,7 @@
         <td>${escapeHtml(p.name)}</td>
         <td>${escapeHtml(p.category_name || '—')}</td>
         <td>${formatMoney(p.unit_price)}</td>
-        <td>${Number(p.stock_qty).toLocaleString('ar-SA')} ${stockBadge(p.stock_qty)}</td>
+        <td>${Number(p.stock_qty).toLocaleString('ar-DZ')} ${stockBadge(p.stock_qty)}</td>
         <td>
           <button type="button" class="link-btn" data-edit="${p.id}">تعديل</button>
           <button type="button" class="link-btn danger" data-del="${p.id}">حذف</button>
@@ -667,6 +743,407 @@
     });
   }
 
+  async function refreshSuppliers() {
+    const rows = await safeInvoke(() => api.suppliers.list(), 'تعذر تحميل الموردين');
+    const tbody = $('suppliers-body');
+    tbody.innerHTML = rows
+      .map((s) => {
+        return `<tr data-id="${s.id}">
+          <td>${s.id}</td>
+          <td>${escapeHtml(s.name)}</td>
+          <td>${escapeHtml(s.contact || '')}</td>
+          <td>${escapeHtml(s.address || '')}</td>
+          <td>
+            <button type="button" class="link-btn" data-edit-sup="${s.id}">تعديل</button>
+            <button type="button" class="link-btn danger" data-del-sup="${s.id}">حذف</button>
+          </td>
+        </tr>`;
+      })
+      .join('');
+
+    tbody.querySelectorAll('[data-edit-sup]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const sid = Number(b.getAttribute('data-edit-sup'));
+        openSupplierModal(sid);
+      });
+    });
+    tbody.querySelectorAll('[data-del-sup]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const sid = Number(b.getAttribute('data-del-sup'));
+        if (!confirm('حذف هذا المورد؟')) return;
+        const res = await api.suppliers.remove(sid);
+        if (!res.ok) {
+          toast(res.error || 'تعذر الحذف', true);
+          return;
+        }
+        toast('تم الحذف');
+        await refreshSuppliers();
+      });
+    });
+  }
+
+  function bindSuppliers() {
+    $('sup-add-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = $('sup-new-name').value;
+      const contact = $('sup-new-contact').value;
+      const address = $('sup-new-address').value;
+      const res = await api.suppliers.add({ name, contact, address });
+      if (!res.ok) {
+        toast(res.error || 'فشل الإضافة', true);
+        return;
+      }
+      $('sup-new-name').value = '';
+      $('sup-new-contact').value = '';
+      $('sup-new-address').value = '';
+      toast('تمت إضافة المورد');
+      await refreshSuppliers();
+    });
+    $('sup-reset-form').addEventListener('click', () => {
+      $('sup-new-name').value = '';
+      $('sup-new-contact').value = '';
+      $('sup-new-address').value = '';
+    });
+  }
+
+  function openSupplierModal(sid) {
+    const html = `
+      <form id="sup-edit-form" class="card pad">
+        <h2 class="card-title">تعديل المورد</h2>
+        <label class="field">
+          <span class="field-label">الاسم</span>
+          <input id="sup-edit-name" class="input" required />
+        </label>
+        <label class="field">
+          <span class="field-label">الاتصال</span>
+          <input id="sup-edit-contact" class="input" />
+        </label>
+        <label class="field">
+          <span class="field-label">العنوان</span>
+          <input id="sup-edit-address" class="input" />
+        </label>
+        <div class="field-row">
+          <button type="submit" class="btn btn-primary">حفظ</button>
+          <button type="button" class="btn btn-ghost" data-close-modal>إلغاء</button>
+        </div>
+      </form>
+    `;
+    openModal('تعديل المورد', html);
+    api.suppliers.list().then((rows) => {
+      const sup = rows.find((s) => s.id === sid);
+      if (sup) {
+        $('sup-edit-name').value = sup.name;
+        $('sup-edit-contact').value = sup.contact || '';
+        $('sup-edit-address').value = sup.address || '';
+      }
+    });
+    $('sup-edit-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = $('sup-edit-name').value;
+      const contact = $('sup-edit-contact').value;
+      const address = $('sup-edit-address').value;
+      const res = await api.suppliers.update({ id: sid, name, contact, address });
+      if (!res.ok) {
+        toast(res.error || 'فشل التحديث', true);
+        return;
+      }
+      closeModal();
+      toast('تم التحديث');
+      await refreshSuppliers();
+    });
+  }
+
+  async function refreshPurchases() {
+    const rows = await safeInvoke(() => api.purchases.list(), 'تعذر تحميل المشتريات');
+    const tbody = $('pur-body');
+    tbody.innerHTML = rows
+      .map((p) => {
+        return `<tr data-id="${p.id}">
+          <td>${p.id}</td>
+          <td>${escapeHtml(p.purchased_at)}</td>
+          <td>${escapeHtml(p.supplier_name || 'غير محدد')}</td>
+          <td>${formatMoney(p.total)}</td>
+          <td><button type="button" class="link-btn" data-view-pur="${p.id}">عرض</button></td>
+        </tr>`;
+      })
+      .join('');
+
+    tbody.querySelectorAll('[data-view-pur]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const pid = Number(b.getAttribute('data-view-pur'));
+        openPurchaseDetailModal(pid);
+      });
+    });
+  }
+
+  function bindPurchases() {
+    $('pur-add').addEventListener('click', () => openPurchaseModal());
+  }
+
+  function openPurchaseModal() {
+    const html = `
+      <div class="purchase-modal">
+        <form id="pur-form" class="card pad">
+          <h2 class="card-title">إضافة مشتريات</h2>
+          <div class="field-row">
+            <label class="field grow">
+              <span class="field-label">المورد</span>
+              <select id="pur-supplier" class="input">
+                <option value="">غير محدد</option>
+              </select>
+            </label>
+          </div>
+          <div class="field-row">
+            <label class="field grow">
+              <span class="field-label">ملاحظات</span>
+              <input id="pur-notes" class="input" />
+            </label>
+          </div>
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">مبلغ الدفع</span>
+              <input id="pur-payment" type="number" class="input" min="0" step="0.01" placeholder="0.00" />
+            </label>
+            <label class="field">
+              <span class="field-label">المبلغ المتبقي</span>
+              <input id="pur-remaining" type="number" class="input" min="0" step="0.01" placeholder="0.00" />
+            </label>
+          </div>
+          <div class="pur-cart">
+            <h3>المنتجات</h3>
+            <div class="field-row">
+              <label class="field grow">
+                <span class="field-label">البحث عن منتج</span>
+                <input id="pur-search" class="input" placeholder="اسم المنتج..." />
+              </label>
+              <button type="button" class="btn btn-ghost" id="pur-add-item">إضافة</button>
+              <button type="button" class="btn btn-ghost" id="pur-add-new">إضافة منتج جديد</button>
+            </div>
+            <div class="table-wrap pur-items-table">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>المنتج</th>
+                    <th>الكمية</th>
+                    <th>سعر الشراء</th>
+                    <th>الإجمالي</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="pur-cart-body"></tbody>
+              </table>
+            </div>
+            <div class="pur-summary">
+              <strong>الإجمالي: <span id="pur-total">0.00</span></strong>
+            </div>
+          </div>
+          <div class="field-row">
+            <button type="submit" class="btn btn-primary">حفظ المشتريات</button>
+            <button type="button" class="btn btn-ghost" data-close-modal>إلغاء</button>
+          </div>
+        </form>
+      </div>
+    `;
+    openModal('إضافة مشتريات', html);
+    loadSuppliersForPurchase();
+    bindPurchaseForm();
+  }
+
+  async function loadSuppliersForPurchase() {
+    const suppliers = await api.suppliers.list();
+    const sel = $('pur-supplier');
+    sel.innerHTML = '<option value="">غير محدد</option>' +
+      suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+  }
+
+  function bindPurchaseForm() {
+    const purState = { cart: [] };
+    const updateTotal = () => {
+      const total = purState.cart.reduce((sum, it) => sum + (it.qty * it.unit_cost), 0);
+      $('pur-total').textContent = formatMoney(total);
+    };
+    const renderCart = () => {
+      const tbody = $('pur-cart-body');
+      tbody.innerHTML = purState.cart
+        .map((it, idx) => `
+          <tr>
+            <td>${escapeHtml(it.name)}${it.is_new ? ` <small>(جديد - باركود: ${it.barcode})</small>` : ''}</td>
+            <td><input type="number" class="input input-sm" value="${it.qty}" min="0.01" step="0.01" data-idx="${idx}" data-field="qty" /></td>
+            <td><input type="number" class="input input-sm" value="${it.unit_cost}" min="0" step="0.01" data-idx="${idx}" data-field="cost" /></td>
+            <td>${formatMoney(it.qty * it.unit_cost)}</td>
+            <td><button type="button" class="btn btn-sm btn-ghost danger" data-remove="${idx}">×</button></td>
+          </tr>
+        `).join('');
+      tbody.querySelectorAll('input').forEach(inp => {
+        inp.addEventListener('input', () => {
+          const idx = Number(inp.dataset.idx);
+          const field = inp.dataset.field;
+          const val = Number(inp.value);
+          if (field === 'qty') purState.cart[idx].qty = val;
+          if (field === 'cost') purState.cart[idx].unit_cost = val;
+          renderCart();
+          updateTotal();
+        });
+      });
+      tbody.querySelectorAll('[data-remove]').forEach(b => {
+        b.addEventListener('click', () => {
+          const idx = Number(b.dataset.remove);
+          purState.cart.splice(idx, 1);
+          renderCart();
+          updateTotal();
+        });
+      });
+    };
+
+    $('pur-add-item').addEventListener('click', async () => {
+      const q = $('pur-search').value.trim();
+      if (!q) return;
+      const products = await api.products.search(q);
+      if (products.length === 0) {
+        toast('لا توجد منتجات مطابقة، يمكنك إضافة منتج جديد', true);
+        return;
+      }
+      const p = products[0]; // أول نتيجة
+      purState.cart.push({ product_id: p.id, name: p.name, qty: 1, unit_cost: 0 });
+      $('pur-search').value = '';
+      renderCart();
+      updateTotal();
+    });
+
+    $('pur-add-new').addEventListener('click', async () => {
+      const q = $('pur-search').value.trim();
+      if (!q) {
+        toast('أدخل اسم المنتج أولاً', true);
+        return;
+      }
+      
+      // Generate barcode for new product
+      const barcode = 'P' + Date.now().toString().slice(-8);
+      
+      // Create new product
+      const newProduct = {
+        sku: 'SKU-' + Date.now(),
+        name: q,
+        category_id: 1, // Default category
+        unit_price: 0,
+        stock_qty: 0,
+        barcode: barcode,
+        reorder_level: 5
+      };
+      
+      const result = await api.products.add(newProduct);
+      if (!result.id) {
+        toast('فشل في إضافة المنتج الجديد', true);
+        return;
+      }
+      
+      // Add to cart
+      purState.cart.push({ 
+        product_id: result.id, 
+        name: q, 
+        qty: 1, 
+        unit_cost: 0,
+        is_new: true,
+        barcode: barcode
+      });
+      $('pur-search').value = '';
+      toast(`تم إضافة منتج جديد مع الباركود: ${barcode}`);
+      renderCart();
+      updateTotal();
+    });
+
+    $('pur-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (purState.cart.length === 0) {
+        toast('السلة فارغة', true);
+        return;
+      }
+      const supplier_id = $('pur-supplier').value ? Number($('pur-supplier').value) : null;
+      const baseNotes = $('pur-notes').value;
+      const paymentAmount = Number($('pur-payment').value) || 0;
+      const remainingAmount = Number($('pur-remaining').value) || 0;
+      
+      // Build enhanced notes with payment and debt information
+      let notes = baseNotes;
+      if (paymentAmount > 0 || remainingAmount > 0) {
+        const paymentInfo = `مبلغ الدفع: ${formatMoney(paymentAmount)}, المبلغ المتبقي: ${formatMoney(remainingAmount)}`;
+        notes = notes ? `${notes}\n${paymentInfo}` : paymentInfo;
+      }
+      
+      // Add information about new products
+      const newProducts = purState.cart.filter(it => it.is_new);
+      if (newProducts.length > 0) {
+        const newProductInfo = `منتجات جديدة: ${newProducts.map(p => `${p.name} (باركود: ${p.barcode})`).join(', ')}`;
+        notes = notes ? `${notes}\n${newProductInfo}` : newProductInfo;
+      }
+      
+      const items = purState.cart.map(it => ({
+        product_id: it.product_id,
+        qty: it.qty,
+        unit_cost: it.unit_cost
+      }));
+      const res = await api.purchases.create({ supplier_id, notes, items });
+      if (!res.ok) {
+        toast(res.error || 'فشل الحفظ', true);
+        return;
+      }
+      closeModal();
+      toast('تم حفظ المشتريات');
+      await refreshPurchases();
+      if (state.page === 'inventory') await refreshInventory();
+      if (state.page === 'dashboard') await refreshDashboard();
+    });
+  }
+
+  function openPurchaseDetailModal(pid) {
+    Promise.all([
+      api.purchases.detail(pid),
+      api.purchases.items(pid)
+    ]).then(([detail, items]) => {
+      if (!detail) {
+        toast('المشتريات غير موجودة', true);
+        return;
+      }
+      const html = `
+        <div class="card pad">
+          <h2 class="card-title">تفاصيل المشتريات #${pid}</h2>
+          ${detail.notes ? `<div class="field-row"><strong>ملاحظات:</strong> ${escapeHtml(detail.notes).replace(/\n/g, '<br>')}</div>` : ''}
+          ${detail.supplier_name ? `<div class="field-row"><strong>المورد:</strong> ${escapeHtml(detail.supplier_name)}</div>` : ''}
+          <div class="field-row"><strong>التاريخ:</strong> ${escapeHtml(detail.purchased_at)}</div>
+          <div class="field-row"><strong>الإجمالي:</strong> ${formatMoney(detail.total)}</div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>المنتج</th>
+                  <th>الكمية</th>
+                  <th>سعر الشراء</th>
+                  <th>الإجمالي</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${items.map(it => `
+                  <tr>
+                    <td>${escapeHtml(it.product_name)} (${it.sku})</td>
+                    <td>${it.qty}</td>
+                    <td>${formatMoney(it.unit_cost)}</td>
+                    <td>${formatMoney(it.line_total)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div class="field-row">
+            <button type="button" class="btn btn-ghost" data-close-modal>إغلاق</button>
+          </div>
+        </div>
+      `;
+      openModal(`تفاصيل المشتريات #${pid}`, html);
+    }).catch(() => {
+      toast('فشل في تحميل تفاصيل المشتريات', true);
+    });
+  }
+
   function openModal(title, html, printSaleId) {
     $('modal-title').textContent = title;
     $('modal-body').innerHTML = html;
@@ -732,39 +1209,305 @@
     });
   }
 
+  function openSalesModal() {
+    const html = `
+      <div class="sales-modal">
+        <form id="sales-form" class="card pad">
+          <h2 class="card-title">إضافة مبيعات</h2>
+          <div class="sales-cart">
+            <h3>المنتجات</h3>
+            <div class="field-row">
+              <label class="field grow">
+                <span class="field-label">البحث عن منتج</span>
+                <input id="sales-search" class="input" placeholder="اسم المنتج أو SKU..." />
+              </label>
+              <button type="button" class="btn btn-ghost" id="sales-add-item">إضافة</button>
+            </div>
+            <div class="table-wrap sales-items-table">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>المنتج</th>
+                    <th>الكمية</th>
+                    <th>السعر</th>
+                    <th>الإجمالي</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="sales-cart-body"></tbody>
+              </table>
+            </div>
+            <div class="sales-summary">
+              <strong>الإجمالي: <span id="sales-total">0.00</span></strong>
+            </div>
+          </div>
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">طريقة الدفع</span>
+              <select id="sales-payment" class="input">
+                <option>نقدي</option>
+                <option>بطاقة</option>
+                <option>تحويل</option>
+              </select>
+            </label>
+          </div>
+          <div class="payment-details" id="sales-payment-details" style="display: none;">
+            <label class="field">
+              <span class="field-label">المبلغ المستلم</span>
+              <input type="number" id="sales-received" class="input" placeholder="0.00" min="0" step="0.01" />
+            </label>
+            <div class="change-display">
+              <span class="change-label">الباقي:</span>
+              <strong id="sales-change" class="change-amount">0.00</strong>
+            </div>
+          </div>
+          <label class="field">
+            <span class="field-label">كود الباركود (اختياري)</span>
+            <input type="text" id="sales-barcode" class="input" placeholder="امسح الباركود أو اكتبه" />
+          </label>
+          <label class="field">
+            <span class="field-label">ملاحظات (اختياري)</span>
+            <input type="text" id="sales-notes" class="input" placeholder="—" />
+          </label>
+          <div class="pos-decoration">
+            <div class="decorative-line"></div>
+            <div class="decorative-dots">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+          <div class="field-row">
+            <button type="submit" class="btn btn-primary">حفظ المبيعات</button>
+            <button type="button" class="btn btn-ghost" data-close-modal>إلغاء</button>
+          </div>
+        </form>
+      </div>
+    `;
+    openModal('إضافة مبيعات', html);
+    bindSalesForm();
+  }
+
+  function bindSalesForm() {
+    const salesState = { cart: [] };
+    const updateTotal = () => {
+      const total = salesState.cart.reduce((sum, it) => sum + (it.qty * it.unit_price), 0);
+      $('sales-total').textContent = formatMoney(total);
+    };
+    const renderCart = () => {
+      const tbody = $('sales-cart-body');
+      tbody.innerHTML = salesState.cart
+        .map((it, idx) => `
+          <tr>
+            <td>${escapeHtml(it.name)} (${it.sku})</td>
+            <td><input type="number" class="input input-sm" value="${it.qty}" min="0.01" step="0.01" data-idx="${idx}" data-field="qty" /></td>
+            <td><input type="number" class="input input-sm" value="${it.unit_price}" min="0" step="0.01" data-idx="${idx}" data-field="price" /></td>
+            <td>${formatMoney(it.qty * it.unit_price)}</td>
+            <td><button type="button" class="btn btn-sm btn-ghost danger" data-remove="${idx}">×</button></td>
+          </tr>
+        `).join('');
+      tbody.querySelectorAll('input').forEach(inp => {
+        inp.addEventListener('input', () => {
+          const idx = Number(inp.dataset.idx);
+          const field = inp.dataset.field;
+          const val = Number(inp.value);
+          if (field === 'qty') salesState.cart[idx].qty = val;
+          if (field === 'price') salesState.cart[idx].unit_price = val;
+          renderCart();
+          updateTotal();
+        });
+      });
+      tbody.querySelectorAll('[data-remove]').forEach(b => {
+        b.addEventListener('click', () => {
+          const idx = Number(b.dataset.remove);
+          salesState.cart.splice(idx, 1);
+          renderCart();
+          updateTotal();
+        });
+      });
+    };
+
+    // Payment method change handler
+    $('sales-payment').addEventListener('change', () => {
+      const paymentMethod = $('sales-payment').value;
+      const paymentDetails = $('sales-payment-details');
+      if (paymentMethod === 'نقدي') {
+        paymentDetails.style.display = 'block';
+      } else {
+        paymentDetails.style.display = 'none';
+        $('sales-received').value = '';
+        $('sales-change').textContent = '0.00';
+      }
+    });
+
+    // Amount received input handler
+    $('sales-received').addEventListener('input', () => {
+      const received = Number($('sales-received').value) || 0;
+      const total = salesState.cart.reduce((sum, it) => sum + (it.qty * it.unit_price), 0);
+      const change = Math.max(0, received - total);
+      $('sales-change').textContent = formatMoney(change);
+    });
+
+    // Barcode input handler
+    $('sales-barcode').addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const barcode = $('sales-barcode').value.trim();
+        if (!barcode) return;
+
+        try {
+          const result = await api.scanBarcode(barcode);
+          if (result.ok && result.result) {
+            const existing = salesState.cart.find(item => item.product_id === result.result.id);
+            if (existing) {
+              existing.qty += 1;
+            } else {
+              salesState.cart.push({
+                product_id: result.result.id,
+                name: result.result.name,
+                sku: result.result.sku,
+                qty: 1,
+                unit_price: result.result.unit_price
+              });
+            }
+            $('sales-barcode').value = '';
+            renderCart();
+            updateTotal();
+            toast('تم إضافة المنتج من الباركود');
+          } else {
+            toast('لم يتم العثور على منتج بهذا الباركود', true);
+          }
+        } catch (error) {
+          toast('خطأ في مسح الباركود', true);
+        }
+      }
+    });
+
+    $('sales-add-item').addEventListener('click', async () => {
+      const q = $('sales-search').value.trim();
+      if (!q) return;
+      const products = await api.products.search(q);
+      if (products.length === 0) {
+        toast('لا توجد منتجات مطابقة', true);
+        return;
+      }
+      const p = products[0];
+      const existing = salesState.cart.find(item => item.product_id === p.id);
+      if (existing) {
+        existing.qty += 1;
+      } else {
+        salesState.cart.push({
+          product_id: p.id,
+          name: p.name,
+          sku: p.sku,
+          qty: 1,
+          unit_price: p.unit_price
+        });
+      }
+      $('sales-search').value = '';
+      renderCart();
+      updateTotal();
+    });
+
+    $('sales-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (salesState.cart.length === 0) {
+        toast('السلة فارغة', true);
+        return;
+      }
+
+      const paymentMethod = $('sales-payment').value;
+      const received = Number($('sales-received').value) || 0;
+      const total = salesState.cart.reduce((sum, it) => sum + (it.qty * it.unit_price), 0);
+
+      // Validate cash payment
+      if (paymentMethod === 'نقدي' && received < total) {
+        toast('المبلغ المستلم أقل من الإجمالي', true);
+        return;
+      }
+
+      const items = salesState.cart.map(it => ({
+        product_id: it.product_id,
+        qty: it.qty
+      }));
+
+      const res = await api.sales.create({
+        payment_method: paymentMethod,
+        received_amount: paymentMethod === 'نقدي' ? received : null,
+        change_amount: paymentMethod === 'نقدي' ? Math.max(0, received - total) : null,
+        notes: $('sales-notes').value.trim() || null,
+        items: items
+      });
+
+      if (!res.ok) {
+        toast(res.error || 'فشل الحفظ', true);
+        return;
+      }
+
+      closeModal();
+      toast('تم حفظ المبيعات');
+      await refreshSales();
+      if (state.page === 'dashboard') await refreshDashboard();
+    });
+  }
+
   function bindSales() {
     $('sales-refresh').addEventListener('click', () => refreshSales());
+    $('sales-add').addEventListener('click', () => openSalesModal());
   }
 
   async function runReport() {
+    const type = $('rep-type').value;
     const from = $('rep-from').value;
     const to = $('rep-to').value;
     if (!from || !to) {
       toast('اختر نطاق التواريخ', true);
       return;
     }
-    const rows = await safeInvoke(() => api.reports.salesInRange(from, to), 'تعذر التحميل');
-    const sum = rows.reduce((a, r) => a + (Number(r.total) || 0), 0);
-    $('rep-summary').textContent = `${rows.length} فاتورة · الإجمالي ${formatMoney(sum)}`;
+    let rows, sum, headers, bodyHtml;
+    if (type === 'purchases') {
+      rows = await safeInvoke(() => api.reports.purchasesInRange(from, to), 'تعذر التحميل');
+      sum = rows.reduce((a, r) => a + (Number(r.total) || 0), 0);
+      $('rep-summary').textContent = `${rows.length} مشتريات · الإجمالي ${formatMoney(sum)}`;
+      headers = ['#', 'التاريخ', 'المورد', 'الإجمالي', 'ملاحظات'];
+      bodyHtml = rows
+        .map(
+          (p) => `<tr>
+          <td>${p.id}</td>
+          <td>${escapeHtml(p.purchased_at)}</td>
+          <td>${escapeHtml(p.supplier_name || '')}</td>
+          <td>${formatMoney(p.total)}</td>
+          <td>${escapeHtml(p.notes || '')}</td>
+        </tr>`
+        )
+        .join('');
+    } else {
+      rows = await safeInvoke(() => api.reports.salesInRange(from, to), 'تعذر التحميل');
+      sum = rows.reduce((a, r) => a + (Number(r.total) || 0), 0);
+      $('rep-summary').textContent = `${rows.length} فاتورة · الإجمالي ${formatMoney(sum)}`;
+      headers = ['#', 'التاريخ', 'الإجمالي', 'الدفع', 'ملاحظات'];
+      bodyHtml = rows
+        .map(
+          (s) => `<tr>
+          <td>${s.id}</td>
+          <td>${escapeHtml(s.sold_at)}</td>
+          <td>${formatMoney(s.total)}</td>
+          <td>${escapeHtml(s.payment_method || '')}</td>
+          <td>${escapeHtml(s.notes || '')}</td>
+        </tr>`
+        )
+        .join('');
+    }
+    const thead = $('rep-body').parentElement.querySelector('thead');
+    thead.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
     const tb = $('rep-body');
     if (!rows.length) {
-      tb.innerHTML = `<tr><td colspan="5" class="empty-hint">لا نتائج في هذا النطاق</td></tr>`;
+      tb.innerHTML = `<tr><td colspan="${headers.length}" class="empty-hint">لا نتائج في هذا النطاق</td></tr>`;
       return;
     }
-    tb.innerHTML = rows
-      .map(
-        (s) => `<tr>
-        <td>${s.id}</td>
-        <td>${escapeHtml(s.sold_at)}</td>
-        <td>${formatMoney(s.total)}</td>
-        <td>${escapeHtml(s.payment_method || '')}</td>
-        <td>${escapeHtml(s.notes || '')}</td>
-      </tr>`
-      )
-      .join('');
+    tb.innerHTML = bodyHtml;
   }
 
   async function exportReportCsv() {
+    const type = $('rep-type').value;
     const from = $('rep-from').value;
     const to = $('rep-to').value;
     if (!from || !to) {
@@ -772,8 +1515,13 @@
       return;
     }
     await withLoading(async () => {
-      const csv = await safeInvoke(() => api.reports.salesCsv(from, to), 'تعذر بناء الملف');
-      const res = await api.export.saveText({ defaultName: `sales_${from}_${to}.csv`, content: csv });
+      let csv;
+      if (type === 'purchases') {
+        csv = await safeInvoke(() => api.reports.purchasesCsv(from, to), 'تعذر بناء الملف');
+      } else {
+        csv = await safeInvoke(() => api.reports.salesCsv(from, to), 'تعذر بناء الملف');
+      }
+      const res = await api.export.saveText({ defaultName: `${type}_${from}_${to}.csv`, content: csv });
       if (res.canceled) return;
       if (res.ok) toast('تم حفظ التقرير');
     });
@@ -814,6 +1562,8 @@
     bindPos();
     bindInventory();
     bindCategories();
+    bindSuppliers();
+    bindPurchases();
     bindModal();
     bindSales();
     bindReports();

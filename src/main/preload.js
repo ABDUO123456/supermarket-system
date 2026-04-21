@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   reports: {
     salesInRange: (from, to) => ipcRenderer.invoke('reports:salesInRange', from, to),
+    purchasesInRange: (from, to) => ipcRenderer.invoke('reports:purchasesInRange', from, to),
     salesCsv: (from, to) => ipcRenderer.invoke('reports:salesCsv', from, to)
   },
   export: {
@@ -20,6 +21,7 @@ contextBridge.exposeInMainWorld('api', {
   print: {
     receipt: (saleId) => ipcRenderer.invoke('print:receipt', saleId)
   },
+  scanBarcode: (barcode) => ipcRenderer.invoke('scan:barcode', barcode),
   products: {
     list: () => ipcRenderer.invoke('products:list'),
     search: (q) => ipcRenderer.invoke('products:search', q),
@@ -37,5 +39,17 @@ contextBridge.exposeInMainWorld('api', {
     create: (payload) => ipcRenderer.invoke('sales:create', payload),
     list: (limit) => ipcRenderer.invoke('sales:list', limit),
     items: (saleId) => ipcRenderer.invoke('sales:items', saleId)
+  },
+  purchases: {
+    create: (payload) => ipcRenderer.invoke('purchases:create', payload),
+    list: () => ipcRenderer.invoke('purchases:list'),
+    items: (purchaseId) => ipcRenderer.invoke('purchases:items', purchaseId),
+    detail: (purchaseId) => ipcRenderer.invoke('purchases:detail', purchaseId)
+  },
+  suppliers: {
+    list: () => ipcRenderer.invoke('suppliers:list'),
+    add: (row) => ipcRenderer.invoke('suppliers:add', row),
+    update: (row) => ipcRenderer.invoke('suppliers:update', row),
+    remove: (id) => ipcRenderer.invoke('suppliers:remove', id)
   }
 });
