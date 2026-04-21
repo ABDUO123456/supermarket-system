@@ -12,7 +12,8 @@ contextBridge.exposeInMainWorld('api', {
   reports: {
     salesInRange: (from, to) => ipcRenderer.invoke('reports:salesInRange', from, to),
     purchasesInRange: (from, to) => ipcRenderer.invoke('reports:purchasesInRange', from, to),
-    salesCsv: (from, to) => ipcRenderer.invoke('reports:salesCsv', from, to)
+    salesCsv: (from, to) => ipcRenderer.invoke('reports:salesCsv', from, to),
+    purchasesCsv: (from, to) => ipcRenderer.invoke('reports:purchasesCsv', from, to)
   },
   export: {
     saveText: (payload) => ipcRenderer.invoke('export:saveText', payload),
@@ -38,18 +39,25 @@ contextBridge.exposeInMainWorld('api', {
   sales: {
     create: (payload) => ipcRenderer.invoke('sales:create', payload),
     list: (limit) => ipcRenderer.invoke('sales:list', limit),
-    items: (saleId) => ipcRenderer.invoke('sales:items', saleId)
+    items: (saleId) => ipcRenderer.invoke('sales:items', saleId),
+    remove: (id) => ipcRenderer.invoke('sales:remove', id)
   },
   purchases: {
     create: (payload) => ipcRenderer.invoke('purchases:create', payload),
     list: () => ipcRenderer.invoke('purchases:list'),
     items: (purchaseId) => ipcRenderer.invoke('purchases:items', purchaseId),
-    detail: (purchaseId) => ipcRenderer.invoke('purchases:detail', purchaseId)
+    detail: (purchaseId) => ipcRenderer.invoke('purchases:detail', purchaseId),
+    remove: (id) => ipcRenderer.invoke('purchases:remove', id)
   },
   suppliers: {
     list: () => ipcRenderer.invoke('suppliers:list'),
     add: (row) => ipcRenderer.invoke('suppliers:add', row),
     update: (row) => ipcRenderer.invoke('suppliers:update', row),
     remove: (id) => ipcRenderer.invoke('suppliers:remove', id)
+  },
+  credit: {
+    list: () => ipcRenderer.invoke('credit:list'),
+    add: (row) => ipcRenderer.invoke('credit:add', row),
+    remove: (id) => ipcRenderer.invoke('credit:remove', id)
   }
 });

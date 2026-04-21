@@ -2,6 +2,10 @@
  * خادم HTTP: نفس قاعدة SQLite + واجهة الويب للهاتف (المتصفح على الشبكة).
  * التشغيل: npm run server
  * ثم من الهاتف: http://عنوان-IP-الحاسوب:3847
+ *
+ * ملاحظة مهمة على Windows:
+ * `better-sqlite3` يُبنى عادةً لموديول Node الخاص بـ Electron (انظر `postinstall`).
+ * لذلك `npm run server` يعمل عبر Electron حتى يتطابق النسخة مع المكتبة المبنية مسبقاً.
  */
 const path = require('path');
 const express = require('express');
@@ -62,8 +66,15 @@ app.post('/api/invoke', (req, res) => {
       }
 
       const db = getDb();
-      // البحث عن المنتج بواسطة الباركود
-      const product = db.prepare('SELECT * FROM products WHERE barcode = ?').get(barcode);
+      const code = String(barcode).trim();
+      const product = db
+        .prepare(
+          `SELECT id, sku, name, unit_price, stock_qty, barcode
+           FROM products
+           WHERE barcode = ? OR sku = ?
+           LIMIT 1`
+        )
+        .get(code, code);
 
       if (product) {
         res.json({ ok: true, result: product });
@@ -91,12 +102,35 @@ app.post('/api/invoke', (req, res) => {
 // تقديم ملفات الواجهة (Renderer) للهاتف
 app.use(express.static(path.join(__dirname, '..', 'src', 'renderer')));
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`-------------------------------------------`);
-  console.log(`🚀 سوبر ماركت — خادم الشبكة يعمل الآن`);
-  console.log(`📂 قاعدة البيانات: ${dbPath}`);
-  console.log(`🌐 الرابط المحلي: http://localhost:${PORT}`);
-  console.log(`📱 من الهاتف: استبدل localhost بـ عنوان IP حاسوبك`);
-  console.log(`📟 دعم الماسح الضوئي: مفعّل عبر القناة 'scan:barcode'`);
-  console.log(`-------------------------------------------`);
-});
+function startServer() {
+  return new Promise((resolve, reject) => {
+    const server = app
+      .listen(PORT, '0.0.0.0', () => {
+        console.log(`-------------------------------------------`);
+        console.log(`🚀 سوبر ماركت — خادم الشبكة يعمل الآن`);
+        console.log(`📂 قاعدة البيانات: ${dbPath}`);
+        console.log(`🌐 الرابط المحلي: http://localhost:${PORT}`);
+        console.log(`📱 من الهاتف: استبدل localhost بـ عنوان IP حاسوبك`);
+        console.log(`📟 دعم الماسح الضوئي: مفعّل عبر القناة 'scan:barcode'`);
+        console.log(`-------------------------------------------`);
+        resolve(server);
+      })
+      .on('error', reject);
+  });
+}
+
+async function stopServer(server) {
+  await new Promise((resolve, reject) => {
+    if (!server) return resolve();
+    server.close((err) => (err ? reject(err) : resolve()));
+  });
+}
+
+if (require.main === module) {
+  startServer().catch((e) => {
+    console.error('❌ فشل تشغيل الخادم:', e);
+    process.exit(1);
+  });
+}
+
+module.exports = { app, startServer, stopServer, PORT, dbPath, getDb };

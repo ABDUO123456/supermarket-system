@@ -32,7 +32,8 @@
     reports: {
       salesInRange: (from, to) => rpc('reports:salesInRange', from, to),
       purchasesInRange: (from, to) => rpc('reports:purchasesInRange', from, to),
-      salesCsv: (from, to) => rpc('reports:salesCsv', from, to)
+      salesCsv: (from, to) => rpc('reports:salesCsv', from, to),
+      purchasesCsv: (from, to) => rpc('reports:purchasesCsv', from, to)
     },
     export: {
       saveText: async ({ defaultName, content }) => {

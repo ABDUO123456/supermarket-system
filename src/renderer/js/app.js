@@ -11,6 +11,8 @@
     editingCategoryId: null,
     invLowOnly: false,
     posResults: [],
+    lastGlobalBarcodeHandledAt: 0,
+    posScan: { buf: '', t: null, lastTs: 0 },
     settings: {
       store_name: 'سوبر ماركت',
       currency: 'دج',
@@ -19,6 +21,155 @@
     },
     loadingDepth: 0
   };
+
+  // --- Global barcode scanner capture ---
+  // Most USB barcode scanners act like a keyboard: they type fast then hit Enter.
+  const barcodeCapture = {
+    buf: '',
+    t: null,
+    lastTs: 0
+  };
+
+  function isTextKey(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (e.key.length !== 1) return false;
+    // ignore whitespace-only keys
+    if (e.key === ' ') return false;
+    return true;
+  }
+
+  function resetBarcodeBuffer() {
+    barcodeCapture.buf = '';
+    if (barcodeCapture.t) clearTimeout(barcodeCapture.t);
+    barcodeCapture.t = null;
+  }
+
+  function resetPosScanBuffer() {
+    state.posScan.buf = '';
+    if (state.posScan.t) clearTimeout(state.posScan.t);
+    state.posScan.t = null;
+  }
+
+  async function handleScannedBarcode(code) {
+    const barcode = String(code || '').trim();
+    if (!barcode) return;
+
+    // keep search focused for next scan
+    if (state.page === 'pos') {
+      const s = $('pos-search');
+      if (s) s.focus();
+    }
+
+    try {
+      const result = await api.scanBarcode(barcode);
+      if (result && result.ok && result.result) {
+        // add to cart if we are in POS
+        if (state.page === 'pos') {
+          addToCart(result.result);
+          toast('تم إضافة المنتج من الباركود');
+          const s = $('pos-search');
+          if (s) {
+            s.value = '';
+            $('pos-results').innerHTML = '';
+            state.posResults = [];
+          }
+        }
+      } else {
+        toast('لم يتم العثور على منتج بهذا الباركود', true);
+      }
+    } catch (e) {
+      toast('خطأ في مسح الباركود', true);
+    }
+  }
+
+  function bindGlobalBarcodeCapture() {
+    document.addEventListener(
+      'keydown',
+      (e) => {
+        // POS only: avoids hijacking typing/navigation across the whole app
+        if (state.page !== 'pos') return;
+
+        // don't hijack when typing in modal inputs (or when user is composing IME)
+        if (e.isComposing) return;
+        if (document.getElementById('modal') && !document.getElementById('modal').hidden) return;
+
+        const t = e.target;
+        const tag = t && t.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) {
+          // Never treat cash/notes fields as barcode input
+          if (t && (t.id === 'pos-received' || t.id === 'pos-notes')) return;
+
+          // `pos-search` is handled by its own listener (scanner types into the input)
+          if (t && t.id === 'pos-search') return;
+
+          // ignore other inputs/selects
+          return;
+        }
+
+        const now = Date.now();
+        const gap = now - (barcodeCapture.lastTs || 0);
+        barcodeCapture.lastTs = now;
+
+        // if user is typing slowly, reset buffer (treat as normal typing)
+        if (gap > 80) resetBarcodeBuffer();
+
+        if (e.key === 'Enter') {
+          if (barcodeCapture.buf.length >= 4) {
+            const code = barcodeCapture.buf;
+            resetBarcodeBuffer();
+            // prevent Enter from triggering other UI actions when scan completed
+            e.preventDefault();
+            state.lastGlobalBarcodeHandledAt = Date.now();
+            handleScannedBarcode(code);
+          } else {
+            resetBarcodeBuffer();
+          }
+          return;
+        }
+
+        if (isTextKey(e)) {
+          barcodeCapture.buf += e.key;
+          if (barcodeCapture.t) clearTimeout(barcodeCapture.t);
+          // scanner typically finishes quickly; if it pauses, process nothing
+          barcodeCapture.t = setTimeout(() => resetBarcodeBuffer(), 300);
+        }
+      },
+      true
+    );
+  }
+
+  function bindPosFocusLock() {
+    const shouldForceFocus = () => {
+      if (state.page !== 'pos') return false;
+      const modal = $('modal');
+      if (modal && !modal.hidden) return false;
+      return true;
+    };
+
+    const ensureFocus = () => {
+      if (!shouldForceFocus()) return;
+      const s = $('pos-search');
+      if (!s) return;
+      const active = document.activeElement;
+      if (active === s) return;
+      // don't fight number inputs inside the cart (user edits qty)
+      if (active && active.tagName === 'INPUT' && active.getAttribute('type') === 'number') return;
+      s.focus();
+    };
+
+    // focus whenever user clicks inside POS page
+    document.addEventListener('pointerdown', () => {
+      setTimeout(ensureFocus, 0);
+    });
+
+    // focus when focus changes
+    document.addEventListener('focusin', () => {
+      setTimeout(ensureFocus, 0);
+    });
+
+    // periodic safety net (scanner reliability)
+    setInterval(ensureFocus, 800);
+  }
 
   function currencyLabel() {
     return state.settings.currency || 'دج';
@@ -390,8 +541,43 @@
       clearTimeout(state.posSearchTimer);
       state.posSearchTimer = setTimeout(runPosSearch, 200);
     });
+    // Capture phase: scanners often "type" into the focused search field.
+    search.addEventListener(
+      'keydown',
+      (e) => {
+        if (state.page !== 'pos') return;
+        if (e.isComposing) return;
+
+        const now = Date.now();
+        const gap = now - (state.posScan.lastTs || 0);
+        state.posScan.lastTs = now;
+        if (gap > 80) resetPosScanBuffer();
+
+        if (e.key === 'Enter') {
+          if (state.posScan.buf.length >= 4) {
+            const code = state.posScan.buf;
+            resetPosScanBuffer();
+            e.preventDefault();
+            state.lastGlobalBarcodeHandledAt = Date.now();
+            handleScannedBarcode(code);
+          } else {
+            resetPosScanBuffer();
+          }
+          return;
+        }
+
+        if (isTextKey(e)) {
+          state.posScan.buf += e.key;
+          if (state.posScan.t) clearTimeout(state.posScan.t);
+          state.posScan.t = setTimeout(() => resetPosScanBuffer(), 300);
+        }
+      },
+      true
+    );
     search.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
+        // If a global scanner handler just processed Enter, don't also "add first search result"
+        if (Date.now() - (state.lastGlobalBarcodeHandledAt || 0) < 250) return;
         e.preventDefault();
         if (state.page === 'pos') addFirstSearchResult();
       }
@@ -1650,6 +1836,8 @@
     await withLoading(async () => {
       await loadSettings();
     });
+    bindGlobalBarcodeCapture();
+    bindPosFocusLock();
     bindNav();
     bindPos();
     bindInventory();

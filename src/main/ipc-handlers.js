@@ -17,10 +17,19 @@ function registerIpcHandlers(ipcMain, getDb) {
       if (!barcode) return { ok: false, error: 'الباركود مطلوب' };
       
       const db = getDb();
-      // البحث عن المنتج في جدول products بواسطة الباركود
-      const product = db.prepare('SELECT * FROM products WHERE barcode = ?').get(barcode);
+      // البحث عن المنتج في جدول products بواسطة الباركود (أو SKU كحل احتياطي)
+      const code = String(barcode).trim();
+      const product = db
+        .prepare(
+          `SELECT id, sku, name, unit_price, stock_qty, barcode
+           FROM products
+           WHERE barcode = ? OR sku = ?
+           LIMIT 1`
+        )
+        .get(code, code);
       
       if (product) {
+        // المطلوب: (name, price) — ونرجّع أيضاً حقول كافية لإضافته للسلة
         return { ok: true, result: product };
       } else {
         return { ok: false, error: 'المنتج غير موجود' };
