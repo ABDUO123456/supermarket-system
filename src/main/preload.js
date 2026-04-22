@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld('api', {
   credit: {
     list: () => ipcRenderer.invoke('credit:list'),
     add: (row) => ipcRenderer.invoke('credit:add', row),
+    update: (row) => ipcRenderer.invoke('credit:update', row),
     remove: (id) => ipcRenderer.invoke('credit:remove', id)
   }
 });

@@ -6,12 +6,25 @@ const { runDispatch, DISPATCH_CHANNELS } = require('./dispatch');
 const { buildReceiptHtml } = require('./receipt-html');
 
 function registerIpcHandlers(ipcMain, getDb) {
-  // تسجيل القنوات الافتراضية
+  // تسجيل القنوات الافتراضية (إزالة أي معالج سابق يتجنب خطأ "handler already registered" عند إعادة التحميل)
   for (const ch of DISPATCH_CHANNELS) {
-    ipcMain.handle(ch, (_event, ...args) => runDispatch(getDb, ch, args));
+    try {
+      ipcMain.removeHandler(ch);
+    } catch (_) {}
+    ipcMain.handle(ch, (_event, ...args) => {
+      try {
+        return runDispatch(getDb, ch, args);
+      } catch (err) {
+        console.error(`[IPC dispatch] ${ch}`, err);
+        throw err;
+      }
+    });
   }
 
   // --- إضافة قناة الماسح الضوئي (Barcode Scanner) ---
+  try {
+    ipcMain.removeHandler('scan:barcode');
+  } catch (_) {}
   ipcMain.handle('scan:barcode', async (_event, barcode) => {
     try {
       if (!barcode) return { ok: false, error: 'الباركود مطلوب' };
@@ -40,6 +53,9 @@ function registerIpcHandlers(ipcMain, getDb) {
   });
 
   // معالج حفظ الملفات (Export)
+  try {
+    ipcMain.removeHandler('export:saveText');
+  } catch (_) {}
   ipcMain.handle('export:saveText', async (event, { defaultName, content }) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const { canceled, filePath } = await dialog.showSaveDialog(win || undefined, {
@@ -57,6 +73,9 @@ function registerIpcHandlers(ipcMain, getDb) {
   });
 
   // معالج طباعة الفاتورة
+  try {
+    ipcMain.removeHandler('print:receipt');
+  } catch (_) {}
   ipcMain.handle('print:receipt', async (_event, saleId) => {
     const r = buildReceiptHtml(getDb, saleId);
     if (!r.ok) return r;

@@ -43,13 +43,15 @@ function buildReceiptHtml(getDb, saleId) {
 <meta charset="utf-8"/>
 <title>فاتورة</title>
 <style>
-  body{font-family:'Segoe UI',Tahoma,sans-serif;padding:16px;font-size:13px;color:#111;margin:0}
-  h1{font-size:18px;margin:0 0 8px}
-  .muted{color:#555;font-size:12px;margin-bottom:12px}
+  @page{size:80mm auto;margin:0}
+  body{font-family:'Segoe UI',Tahoma,sans-serif;padding:8px;font-size:12px;color:#111;margin:0;width:80mm}
+  h1{font-size:15px;margin:0 0 6px;text-align:center}
+  .muted{color:#444;font-size:11px;margin-bottom:8px;text-align:center}
   table{width:100%;border-collapse:collapse}
-  th,td{border-bottom:1px solid #ddd;padding:6px 4px;text-align:right}
-  th{font-size:11px;color:#444}
-  .total{font-weight:800;margin-top:10px;font-size:15px}
+  th,td{border-bottom:1px dashed #b9b9b9;padding:4px 2px;text-align:right}
+  th{font-size:10px;color:#333}
+  .total{font-weight:800;margin-top:8px;font-size:14px;text-align:center}
+  .thanks{margin-top:10px;font-size:12px;text-align:center;font-weight:700}
 </style>
 </head>
 <body>
@@ -63,6 +65,7 @@ function buildReceiptHtml(getDb, saleId) {
   <p class="total">الإجمالي: ${Number(sale.total).toLocaleString('ar-DZ', { minimumFractionDigits: 2 })} ${esc(
     currency
   )}</p>
+  <div class="thanks">شكراً لزيارتكم</div>
 </body>
 </html>`;
   return { ok: true, receiptHtml: html };

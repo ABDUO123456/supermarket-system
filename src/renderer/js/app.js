@@ -19,7 +19,15 @@
       theme: 'dark',
       low_stock_threshold: '10'
     },
+    lang: localStorage.getItem('ui_lang') || 'ar',
+    creditSearch: '',
     loadingDepth: 0
+  };
+
+  const I18N = {
+    ar: { dir: 'rtl', pageTitle: 'لوحة التحكم' },
+    fr: { dir: 'ltr', pageTitle: 'Tableau de bord' },
+    en: { dir: 'ltr', pageTitle: 'Dashboard' }
   };
 
   // --- Global barcode scanner capture ---
@@ -50,29 +58,83 @@
     state.posScan.t = null;
   }
 
-  async function handleScannedBarcode(code) {
-    const barcode = String(code || '').trim();
-    if (!barcode) return;
+  /**
+   * باركود ميزان إلكتروني (EAN-13): يبدأ بـ 21 أو 22، طوله 13 رقماً.
+   * الخانات 3–7: رمز الصنف (PLU)، الخانات 8–12: قيمة الوزن؛ الوزن بالكغ = القيمة / 1000.
+   */
+  function parseWeighingScaleEan13(raw) {
+    const digits = String(raw || '').replace(/\D/g, '');
+    if (digits.length !== 13) return null;
+    if (!/^2[12]\d{11}$/.test(digits)) return null;
+    const plu5 = digits.slice(2, 7);
+    const weightInt = parseInt(digits.slice(7, 12), 10);
+    if (!Number.isFinite(weightInt)) return null;
+    const weightKg = weightInt / 1000;
+    return { plu5, weightKg, full: digits };
+  }
 
-    // keep search focused for next scan
+  async function resolveProductByScalePlu(plu5) {
+    const p5 = String(plu5 || '').padStart(5, '0').slice(-5);
+    const variants = [p5, String(Number(p5))];
+    const trimmed = p5.replace(/^0+/, '');
+    if (trimmed) variants.push(trimmed);
+    for (const t of variants) {
+      if (!t) continue;
+      try {
+        const r = await api.scanBarcode(t);
+        if (r && r.ok && r.result) return r.result;
+      } catch (_) {}
+    }
+    try {
+      const rows = await api.products.search(p5);
+      if (rows && rows[0]) return rows[0];
+    } catch (_) {}
+    return null;
+  }
+
+  function clearPosSearchAfterScan() {
+    const s = $('pos-search');
+    if (s) {
+      s.value = '';
+      $('pos-results').innerHTML = '';
+      state.posResults = [];
+    }
+  }
+
+  async function handleScannedBarcode(code) {
+    const raw = String(code || '').trim();
+    if (!raw) return;
+
     if (state.page === 'pos') {
       const s = $('pos-search');
       if (s) s.focus();
     }
 
+    const scale = parseWeighingScaleEan13(raw);
+    if (scale && state.page === 'pos') {
+      if (!(scale.weightKg > 0)) {
+        toast('وزن غير صالح في باركود الميزان', true);
+        return;
+      }
+      const product = await resolveProductByScalePlu(scale.plu5);
+      if (!product) {
+        toast(`لا منتج لرمز الميزان: ${scale.plu5}`, true);
+        return;
+      }
+      addToCart(product, scale.weightKg);
+      if ($('pos-weight-mini')) $('pos-weight-mini').textContent = scale.weightKg.toFixed(3);
+      toast(`ميزان: ${product.name} — ${scale.weightKg.toFixed(3)} كجم`);
+      clearPosSearchAfterScan();
+      return;
+    }
+
     try {
-      const result = await api.scanBarcode(barcode);
+      const result = await api.scanBarcode(raw);
       if (result && result.ok && result.result) {
-        // add to cart if we are in POS
         if (state.page === 'pos') {
           addToCart(result.result);
           toast('تم إضافة المنتج من الباركود');
-          const s = $('pos-search');
-          if (s) {
-            s.value = '';
-            $('pos-results').innerHTML = '';
-            state.posResults = [];
-          }
+          clearPosSearchAfterScan();
         }
       } else {
         toast('لم يتم العثور على منتج بهذا الباركود', true);
@@ -241,6 +303,44 @@
     document.title = `${name} — إدارة`;
   }
 
+  function applyLanguage() {
+    const lang = I18N[state.lang] ? state.lang : 'ar';
+    const meta = I18N[lang];
+    document.documentElement.lang = lang;
+    document.documentElement.dir = meta.dir;
+    const switcher = $('lang-switcher');
+    if (switcher) switcher.value = lang;
+    localStorage.setItem('ui_lang', lang);
+    const checkoutBtn = $('pos-checkout');
+    if (checkoutBtn) checkoutBtn.textContent = lang === 'fr' ? 'Valider' : lang === 'en' ? 'Validate' : 'تأكيد وطباعة';
+  }
+
+  async function detectLocalIp() {
+    const host = String(window.location.hostname || '').trim();
+    if (host && host !== 'localhost' && host !== '127.0.0.1') return host;
+    return new Promise((resolve) => {
+      try {
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        pc.createDataChannel('ip');
+        pc.onicecandidate = (evt) => {
+          const c = evt && evt.candidate && evt.candidate.candidate;
+          if (!c) return;
+          const m = c.match(/(\d{1,3}(?:\.\d{1,3}){3})/);
+          if (m && m[1] && m[1] !== '127.0.0.1') {
+            resolve(m[1]);
+            pc.close();
+          }
+        };
+        pc.createOffer()
+          .then((o) => pc.setLocalDescription(o))
+          .catch(() => resolve('127.0.0.1'));
+        setTimeout(() => resolve(host || '127.0.0.1'), 1200);
+      } catch (_) {
+        resolve(host || '127.0.0.1');
+      }
+    });
+  }
+
   function fillSettingsForm() {
     if (!$('set-store-name')) return;
     $('set-store-name').value = state.settings.store_name || '';
@@ -320,20 +420,52 @@
       .join('');
   }
 
+  function emptyDashboardPayload() {
+    const thr = lowThreshold();
+    return {
+      stats: {
+        productsCount: 0,
+        lowStock: 0,
+        salesToday: 0,
+        revenueToday: 0,
+        lowStockThreshold: thr
+      },
+      recentSales: [],
+      topProducts: [],
+      chart7: []
+    };
+  }
+
   async function refreshDashboard() {
-    const data = await safeInvoke(() => api.dashboard.overview(), 'تعذر تحميل لوحة التحكم');
+    let data;
+    try {
+      if (!api.dashboard || typeof api.dashboard.overview !== 'function') {
+        throw new Error('preload: dashboard.overview غير متاح');
+      }
+      data = await api.dashboard.overview();
+    } catch (e) {
+      console.error('refreshDashboard', e);
+      toast(`تعذر تحميل لوحة التحكم: ${e.message || e}`, true);
+      data = emptyDashboardPayload();
+    }
+
+    if (!data || !data.stats) {
+      data = emptyDashboardPayload();
+    }
+
     const s = data.stats;
-    $('stat-products').textContent = String(s.productsCount);
-    $('stat-low').textContent = String(s.lowStock);
-    $('stat-sales-today').textContent = String(s.salesToday);
-    $('stat-revenue').textContent = formatMoney(s.revenueToday);
-    $('stat-low-hint').textContent = `أصناف أقل من ${s.lowStockThreshold} وحدة`;
+    $('stat-products').textContent = String(s.productsCount ?? 0);
+    $('stat-low').textContent = String(s.lowStock ?? 0);
+    $('stat-sales-today').textContent = String(s.salesToday ?? 0);
+    $('stat-revenue').textContent = formatMoney(s.revenueToday ?? 0);
+    $('stat-low-hint').textContent = `أصناف أقل من ${s.lowStockThreshold ?? lowThreshold()} وحدة`;
 
     const rb = $('dash-recent-body');
-    if (!data.recentSales.length) {
+    const recent = Array.isArray(data.recentSales) ? data.recentSales : [];
+    if (!recent.length) {
       rb.innerHTML = `<tr><td colspan="4" class="empty-hint">لا فواتير بعد</td></tr>`;
     } else {
-      rb.innerHTML = data.recentSales
+      rb.innerHTML = recent
         .map(
           (r) => `<tr>
           <td>${r.id}</td>
@@ -349,10 +481,11 @@
     }
 
     const tb = $('dash-top-body');
-    if (!data.topProducts.length) {
+    const top = Array.isArray(data.topProducts) ? data.topProducts : [];
+    if (!top.length) {
       tb.innerHTML = `<tr><td colspan="3" class="empty-hint">لا مبيعات بعد</td></tr>`;
     } else {
-      tb.innerHTML = data.topProducts
+      tb.innerHTML = top
         .map(
           (p) => `<tr>
           <td>${escapeHtml(p.name)}</td>
@@ -363,7 +496,7 @@
         .join('');
     }
 
-    renderChart7(data.chart7);
+    renderChart7(Array.isArray(data.chart7) ? data.chart7 : []);
   }
 
   async function openSaleDetailModal(id) {
@@ -401,26 +534,33 @@
     return state.cart.find((l) => l.product_id === pid);
   }
 
-  function addToCart(product) {
+  function addToCart(product, qtyAdd = 1) {
+    const qAdd = Number(qtyAdd);
+    const q = Number.isFinite(qAdd) && qAdd > 0 ? Math.round(qAdd * 1000) / 1000 : 1;
     const existing = findCartLine(product.id);
     const max = Number(product.stock_qty) || 0;
     if (max <= 0) {
       toast('لا يوجد مخزون لهذا الصنف', true);
       return;
     }
+    const step = q % 1 !== 0 ? 0.001 : 1;
     if (existing) {
-      if (existing.qty + 1 > max) {
+      const next = existing.qty + q;
+      if (next > max + 1e-9) {
         toast('الكمية المتاحة غير كافية', true);
         return;
       }
-      existing.qty += 1;
+      existing.qty = Math.round(next * 1000) / 1000;
+      if (existing.qty % 1 !== 0) existing.qtyStep = 0.001;
+      else if (step < (existing.qtyStep || 1)) existing.qtyStep = step;
     } else {
       state.cart.push({
         product_id: product.id,
         name: product.name,
         sku: product.sku,
         unit_price: Number(product.unit_price) || 0,
-        qty: 1,
+        qty: q,
+        qtyStep: step,
         stock_qty: max
       });
     }
@@ -436,15 +576,19 @@
   function setLineQty(pid, qty) {
     const line = findCartLine(pid);
     if (!line) return;
-    const q = Math.max(1, Math.min(Number(qty) || 1, line.stock_qty));
+    const minQty = line.qtyStep && line.qtyStep < 1 ? 0.001 : 1;
+    let q = Math.max(minQty, Math.min(Number(qty) || minQty, line.stock_qty));
+    q = Math.round(q * 1000) / 1000;
     line.qty = q;
+    if (line.qty % 1 !== 0) line.qtyStep = 0.001;
     renderPosCart();
   }
 
   function bumpQty(pid, delta) {
     const line = findCartLine(pid);
     if (!line) return;
-    setLineQty(pid, line.qty + delta);
+    const step = line.qtyStep != null ? line.qtyStep : 1;
+    setLineQty(pid, line.qty + delta * step);
   }
 
   function removeLine(pid) {
@@ -473,7 +617,7 @@
           <td>
             <span class="qty-control">
               <button type="button" data-dec="${l.product_id}">−</button>
-              <input type="number" min="1" max="${l.stock_qty}" step="1" value="${l.qty}" data-qty="${l.product_id}" />
+              <input type="number" min="${l.qtyStep && l.qtyStep < 1 ? 0.001 : 1}" max="${l.stock_qty}" step="${l.qtyStep != null ? l.qtyStep : 1}" value="${l.qty}" data-qty="${l.product_id}" />
               <button type="button" data-inc="${l.product_id}">+</button>
             </span>
           </td>
@@ -497,7 +641,22 @@
         b.addEventListener('click', () => removeLine(Number(b.getAttribute('data-rm'))))
       );
     }
-    $('pos-total').textContent = formatMoney(cartTotal());
+    const total = cartTotal();
+    $('pos-total').textContent = formatMoney(total);
+    if ($('pos-total-big')) {
+      $('pos-total-big').textContent = Number(total).toLocaleString('fr-FR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
+    if ($('pos-remaining-mini')) {
+      const received = Number($('pos-received')?.value) || 0;
+      const remaining = Math.max(0, received - total);
+      $('pos-remaining-mini').textContent = Number(remaining).toLocaleString('fr-FR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
   }
 
   async function runPosSearch() {
@@ -600,6 +759,18 @@
       const total = cartTotal();
       const change = Math.max(0, received - total);
       $('pos-change').textContent = formatMoney(change);
+      if ($('pos-received-mini')) {
+        $('pos-received-mini').textContent = Number(received).toLocaleString('fr-FR', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+      }
+      if ($('pos-remaining-mini')) {
+        $('pos-remaining-mini').textContent = Number(change).toLocaleString('fr-FR', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+      }
     });
 
     $('pos-barcode').addEventListener('keydown', async (e) => {
@@ -628,6 +799,18 @@
       $('pos-received').value = '';
       $('pos-change').textContent = '0.00';
       $('pos-barcode').value = '';
+      if ($('pos-received-mini')) $('pos-received-mini').textContent = '0,00';
+      if ($('pos-weight-mini')) $('pos-weight-mini').textContent = '0';
+      if ($('pos-remaining-mini')) $('pos-remaining-mini').textContent = '0,00';
+    });
+
+    document.querySelectorAll('[data-quick-item]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const term = btn.getAttribute('data-quick-item');
+        const rows = await api.products.search(term);
+        if (rows && rows[0]) addToCart(rows[0]);
+        else toast(`الصنف غير موجود: ${term}`, true);
+      });
     });
 
     $('pos-checkout').addEventListener('click', async () => {
@@ -682,6 +865,7 @@
          ${changeText}`,
         saleId
       );
+      await api.print.receipt(Number(saleId));
 
       if (state.page === 'dashboard') refreshDashboard();
     });
@@ -835,6 +1019,94 @@
       state.invLowOnly = !state.invLowOnly;
       btn.classList.toggle('is-on', state.invLowOnly);
       applyInventoryFilter();
+    });
+    $('inv-open-sheet').addEventListener('click', () => openProductSheetModal());
+    $('gen-barcode').addEventListener('click', () => {
+      const generated = `99${Date.now().toString().slice(-11)}`;
+      $('barcode').value = generated;
+      toast('تم توليد باركود تلقائي');
+    });
+    $('print-barcode-label').addEventListener('click', () => {
+      const code = $('barcode').value.trim();
+      const name = $('name').value.trim() || 'منتج';
+      if (!code) {
+        toast('أنشئ باركود أولاً', true);
+        return;
+      }
+      const w = window.open('', '_blank', 'noopener,noreferrer,width=420,height=240');
+      if (!w) return;
+      w.document.write(`<html><body style="font-family:Arial;padding:20px">
+        <h3 style="margin:0 0 8px">${escapeHtml(name)}</h3>
+        <div style="font-size:28px;letter-spacing:4px;font-weight:800">${escapeHtml(code)}</div>
+        <p style="margin-top:12px">Label 80mm</p>
+      </body></html>`);
+      w.document.close();
+      w.focus();
+      w.print();
+    });
+  }
+
+  function openProductSheetModal() {
+    const html = `
+      <form id="product-sheet-form" class="card pad">
+        <h2 class="card-title">ورقة المنتج</h2>
+        <div class="field-row">
+          <label class="field grow">
+            <span class="field-label">SKU</span>
+            <input id="sheet-sku" class="input" required />
+          </label>
+          <label class="field grow">
+            <span class="field-label">الاسم</span>
+            <input id="sheet-name" class="input" required />
+          </label>
+        </div>
+        <div class="field-row">
+          <label class="field grow">
+            <span class="field-label">سعر الشراء</span>
+            <input id="sheet-purchase" class="input" type="number" min="0" step="0.01" />
+          </label>
+          <label class="field grow">
+            <span class="field-label">سعر البيع</span>
+            <input id="sheet-price" class="input" type="number" min="0" step="0.01" required />
+          </label>
+        </div>
+        <div class="field-row">
+          <label class="field grow">
+            <span class="field-label">الكمية</span>
+            <input id="sheet-qty" class="input" type="number" min="0" step="0.01" required />
+          </label>
+          <label class="field grow">
+            <span class="field-label">الباركود</span>
+            <input id="sheet-barcode" class="input" />
+          </label>
+        </div>
+        <div class="field-row">
+          <button type="button" class="btn btn-ghost" id="sheet-generate">توليد 99</button>
+          <button type="submit" class="btn btn-primary">تأكيد</button>
+          <button type="button" class="btn btn-danger-ghost" data-close-modal>إلغاء</button>
+        </div>
+      </form>
+    `;
+    openModal('ورقة المنتج', html);
+    $('sheet-generate').addEventListener('click', () => {
+      if ($('sheet-barcode').value.trim()) return;
+      $('sheet-barcode').value = `99${Date.now().toString().slice(-11)}`;
+    });
+    $('product-sheet-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const row = {
+        sku: $('sheet-sku').value.trim(),
+        name: $('sheet-name').value.trim(),
+        category_id: null,
+        unit_price: Number($('sheet-price').value) || 0,
+        stock_qty: Number($('sheet-qty').value) || 0,
+        barcode: $('sheet-barcode').value.trim() || null,
+        reorder_level: 5
+      };
+      await api.products.add(row);
+      closeModal();
+      toast('تم حفظ المنتج');
+      refreshInventory();
     });
   }
 
@@ -1074,8 +1346,16 @@
 
   async function refreshCredit() {
     const rows = await safeInvoke(() => api.credit.list(), 'تعذر تحميل الحسابات الائتمانية');
+    const q = state.creditSearch.trim().toLowerCase();
+    const filtered = q
+      ? rows.filter(
+          (c) =>
+            String(c.customer_name || '').toLowerCase().includes(q) ||
+            String(c.phone || '').toLowerCase().includes(q)
+        )
+      : rows;
     const tbody = $('credit-body');
-    tbody.innerHTML = rows
+    tbody.innerHTML = filtered
       .map((c) => `
       <tr>
         <td>${c.id}</td>
@@ -1084,10 +1364,55 @@
         <td>${formatMoney(c.amount_due)}</td>
         <td>${escapeHtml(c.created_at)}</td>
         <td>
+          <button type="button" class="link-btn" data-edit-credit="${c.id}">تعديل</button>
+          <button type="button" class="link-btn" data-pay-credit="${c.id}">تسديد جزئي</button>
           <button type="button" class="link-btn danger" data-del-credit="${c.id}">حذف</button>
         </td>
       </tr>`)
       .join('');
+
+    tbody.querySelectorAll('[data-edit-credit]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const id = Number(b.getAttribute('data-edit-credit'));
+        const row = filtered.find((r) => r.id === id);
+        if (!row) return;
+        const name = prompt('اسم الزبون', row.customer_name || '');
+        if (name == null) return;
+        const phone = prompt('الهاتف', row.phone || '') ?? '';
+        const amount = prompt('المبلغ المتبقي', String(row.amount_due || 0));
+        const res = await api.credit.update({
+          id,
+          customer_name: String(name).trim(),
+          phone: String(phone).trim(),
+          amount_due: Number(amount) || 0
+        });
+        if (!res.ok) {
+          toast(res.error || 'تعذر التحديث', true);
+          return;
+        }
+        toast('تم تحديث الحساب');
+        refreshCredit();
+      });
+    });
+    tbody.querySelectorAll('[data-pay-credit]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const id = Number(b.getAttribute('data-pay-credit'));
+        const value = prompt('قيمة التسديد الجزئي', '0');
+        if (value == null) return;
+        const partial = Number(value) || 0;
+        if (partial <= 0) {
+          toast('أدخل مبلغاً صحيحاً', true);
+          return;
+        }
+        const res = await api.credit.update({ id, partial_paid: partial });
+        if (!res.ok) {
+          toast(res.error || 'تعذر التحديث', true);
+          return;
+        }
+        toast('تم تحديث الدين');
+        refreshCredit();
+      });
+    });
 
     tbody.querySelectorAll('[data-del-credit]').forEach((b) => {
       b.addEventListener('click', async () => {
@@ -1106,6 +1431,10 @@
 
   function bindCredit() {
     $('credit-add').addEventListener('click', () => openCreditModal());
+    $('credit-search').addEventListener('input', () => {
+      state.creditSearch = $('credit-search').value;
+      refreshCredit();
+    });
   }
 
   function openCreditModal() {
@@ -1849,11 +2178,26 @@
     bindSales();
     bindReports();
     bindSettings();
+    applyLanguage();
+    $('lang-switcher').addEventListener('change', () => {
+      state.lang = $('lang-switcher').value;
+      applyLanguage();
+      setPage(state.page);
+    });
     updateClock();
+    detectLocalIp().then((ip) => {
+      const el = $('local-ip-pill');
+      if (el) el.textContent = `IP: ${ip}`;
+    });
     setInterval(updateClock, 30000);
     setPage('dashboard');
+    // تأكيد تحميل الإحصائيات بعد أول عرض (حتى لو setPage استدعى refresh بدون await)
+    await refreshDashboard();
   }
 
-  init();
+  init().catch((e) => {
+    console.error(e);
+    toast(`فشل بدء التشغيل: ${e.message || e}`, true);
+  });
 
 })();

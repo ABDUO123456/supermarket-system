@@ -113,6 +113,7 @@
     credit: {
       list: () => rpc('credit:list'),
       add: (row) => rpc('credit:add', row),
+      update: (row) => rpc('credit:update', row),
       remove: (id) => rpc('credit:remove', id)
     }
   };

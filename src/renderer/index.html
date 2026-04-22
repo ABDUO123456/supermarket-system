@@ -76,6 +76,12 @@
         <header class="topbar">
           <h1 class="page-title" id="page-title">لوحة التحكم</h1>
           <div class="topbar-actions">
+            <select id="lang-switcher" class="input input-sm" style="width: 140px">
+              <option value="ar">العربية</option>
+              <option value="fr">Francais</option>
+              <option value="en">English</option>
+            </select>
+            <span class="pill" id="local-ip-pill">IP: --</span>
             <span class="pill" id="clock-pill"></span>
           </div>
         </header>
@@ -168,6 +174,21 @@
             </p>
             <div class="pos-grid">
               <div class="pos-panel">
+                <div class="pos-display-board">
+                  <div class="pos-display-label">البيع السريع</div>
+                  <div class="pos-display-total" id="pos-total-big">0,00</div>
+                  <div class="pos-display-meta">
+                    <span>الاستلام: <strong id="pos-received-mini">0,00</strong></span>
+                    <span>الوزن: <strong id="pos-weight-mini">0</strong></span>
+                    <span>الباقي: <strong id="pos-remaining-mini">0,00</strong></span>
+                  </div>
+                  <div class="pos-display-barcode"></div>
+                </div>
+                <div class="pos-actions-row">
+                  <button type="button" class="btn btn-ghost pos-action-btn" data-go="inventory">المنتجات</button>
+                  <button type="button" class="btn btn-ghost pos-action-btn" data-go="suppliers">الموردين</button>
+                  <button type="button" class="btn btn-ghost pos-action-btn" data-go="purchases">المشتريات</button>
+                </div>
                 <div class="field-row">
                   <label class="field grow">
                     <span class="field-label">بحث سريع (اسم / رمز / باركود)</span>
@@ -196,7 +217,7 @@
                   </table>
                 </div>
                 <div class="cart-summary">
-                  <div class="summary-row">
+                  <div class="summary-row total-hero">
                     <span>الإجمالي</span>
                     <strong id="pos-total">0.00</strong>
                   </div>
@@ -232,8 +253,44 @@
                       <span></span><span></span><span></span>
                     </div>
                   </div>
-                  <button type="button" class="btn btn-primary btn-block" id="pos-checkout">إتمام البيع</button>
+                  <button type="button" class="btn btn-primary btn-block" id="pos-checkout">تأكيد وطباعة</button>
+                  <div class="quick-items">
+                    <button type="button" class="btn btn-ghost quick-btn" data-quick-item="خبز">خبز</button>
+                    <button type="button" class="btn btn-ghost quick-btn" data-quick-item="تباك">تباك</button>
+                    <button type="button" class="btn btn-ghost quick-btn" data-quick-item="فليكسي">فليكسي</button>
+                  </div>
                 </div>
+              </div>
+              <div class="pos-sidebar">
+                <div class="sidebar-title">تنقل سريع</div>
+                <button type="button" class="sidebar-item" data-go="dashboard">
+                  <span class="sidebar-icon">🏠</span>
+                  <span>الرئيسية</span>
+                </button>
+                <button type="button" class="sidebar-item" data-go="pos">
+                  <span class="sidebar-icon">🛒</span>
+                  <span>بيع سريع</span>
+                </button>
+                <button type="button" class="sidebar-item" data-go="inventory">
+                  <span class="sidebar-icon">📦</span>
+                  <span>المنتجات</span>
+                </button>
+                <button type="button" class="sidebar-item" data-go="suppliers">
+                  <span class="sidebar-icon">🚚</span>
+                  <span>الموردين</span>
+                </button>
+                <button type="button" class="sidebar-item" data-go="purchases">
+                  <span class="sidebar-icon">🧾</span>
+                  <span>المشتريات</span>
+                </button>
+                <button type="button" class="sidebar-item" data-go="sales">
+                  <span class="sidebar-icon">🧾</span>
+                  <span>المبيعات</span>
+                </button>
+                <button type="button" class="sidebar-item" data-go="settings">
+                  <span class="sidebar-icon">⚙️</span>
+                  <span>الإعدادات</span>
+                </button>
               </div>
             </div>
           </section>
@@ -244,6 +301,7 @@
                 <span class="field-label sr-only">بحث</span>
                 <input type="search" id="inv-filter" class="input" placeholder="تصفية بالاسم أو SKU أو الباركود…" />
               </label>
+              <button type="button" class="btn btn-primary" id="inv-open-sheet">ورقة المنتج</button>
               <button type="button" class="btn btn-ghost" id="inv-low-only" title="عرض الأصناف تحت حد التنبيه فقط">تنبيهات فقط</button>
               <button type="button" class="btn btn-ghost" id="inv-export">تصدير CSV</button>
               <button type="button" class="btn btn-ghost" id="inv-refresh">تحديث</button>
@@ -297,9 +355,17 @@
                     <input id="reorder_level" class="input" type="number" step="0.01" min="0" value="5" />
                   </label>
                   <label class="field">
+                    <span class="field-label">سعر الشراء</span>
+                    <input id="purchase_price" class="input" type="number" step="0.01" min="0" placeholder="اختياري" />
+                  </label>
+                  <label class="field">
                     <span class="field-label">الباركود</span>
                     <input id="barcode" class="input" placeholder="اختياري" />
                   </label>
+                  <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" id="gen-barcode">توليد باركود تلقائي</button>
+                    <button type="button" class="btn btn-ghost" id="print-barcode-label">طباعة الملصق</button>
+                  </div>
                   <div class="form-actions">
                     <button type="submit" class="btn btn-primary">حفظ</button>
                     <button type="button" class="btn btn-ghost" id="reset-form">تفريغ النموذج</button>
@@ -389,6 +455,10 @@
               <div class="card pad">
                 <div class="toolbar">
                   <button type="button" class="btn btn-primary" id="credit-add">إضافة حساب ائتماني</button>
+                  <label class="field grow">
+                    <span class="field-label">بحث بالاسم أو الهاتف</span>
+                    <input type="search" id="credit-search" class="input" placeholder="اكتب اسم أو رقم هاتف..." />
+                  </label>
                 </div>
                 <div class="table-wrap">
                   <table class="table table-dense">

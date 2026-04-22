@@ -165,7 +165,7 @@ function runDispatch(getDb, channel, args = []) {
       ];
       return lines.join('\n');
     }
-    case 'products:list':
+    case 'products:list': {
       return db
         .prepare(
           `SELECT p.*, c.name AS category_name
@@ -174,6 +174,7 @@ function runDispatch(getDb, channel, args = []) {
            ORDER BY p.name`
         )
         .all();
+    }
     case 'products:search': {
       const q = args[0];
       const term = `%${String(q || '').trim()}%`;
@@ -242,8 +243,9 @@ function runDispatch(getDb, channel, args = []) {
         throw e;
       }
     }
-    case 'categories:list':
+    case 'categories:list': {
       return db.prepare('SELECT * FROM categories ORDER BY name').all();
+    }
     case 'categories:add': {
       const name = args[0];
       const n = String(name || '').trim();
@@ -364,8 +366,9 @@ function runDispatch(getDb, channel, args = []) {
       db.prepare('DELETE FROM sales WHERE id = ?').run(id);
       return { ok: true };
     }
-    case 'suppliers:list':
+    case 'suppliers:list': {
       return db.prepare('SELECT * FROM suppliers ORDER BY name').all();
+    }
     case 'suppliers:add': {
       const row = args[0];
       const stmt = db.prepare(
@@ -524,16 +527,41 @@ function runDispatch(getDb, channel, args = []) {
       const info = stmt.run(row.customer_name, row.phone || null, row.amount_due || 0, row.notes || null);
       return { ok: true, id: info.lastInsertRowid };
     }
+    case 'credit:update': {
+      const row = args[0] || {};
+      const id = Number(row.id);
+      if (!id) return { ok: false, error: 'معرف الحساب مطلوب' };
+      const current = db.prepare('SELECT * FROM credit_accounts WHERE id = ?').get(id);
+      if (!current) return { ok: false, error: 'الحساب غير موجود' };
+
+      const customerName = String(row.customer_name ?? current.customer_name ?? '').trim();
+      if (!customerName) return { ok: false, error: 'اسم العميل مطلوب' };
+      const phone = row.phone != null ? String(row.phone).trim() : current.phone;
+      const notes = row.notes != null ? String(row.notes).trim() : current.notes;
+      const partialPaid = Number(row.partial_paid || 0);
+      const explicitAmount = row.amount_due != null ? Number(row.amount_due) : null;
+      let amountDue = explicitAmount != null && Number.isFinite(explicitAmount) ? explicitAmount : Number(current.amount_due) || 0;
+      if (partialPaid > 0) amountDue = Math.max(0, amountDue - partialPaid);
+
+      db.prepare(
+        `UPDATE credit_accounts
+         SET customer_name = ?, phone = ?, amount_due = ?, notes = ?
+         WHERE id = ?`
+      ).run(customerName, phone || null, Math.max(0, amountDue), notes || null, id);
+      return { ok: true };
+    }
     case 'credit:remove': {
       const id = args[0];
       db.prepare('DELETE FROM credit_accounts WHERE id = ?').run(id);
       return { ok: true };
     }
-    default:
+    default: {
       throw new Error(`قناة غير معروفة: ${channel}`);
+    }
   }
 }
 
+/** قنوات IPC — قائمة منظفة بدون تكرار */
 const DISPATCH_CHANNELS = [
   'settings:getAll',
   'settings:patch',
@@ -541,6 +569,8 @@ const DISPATCH_CHANNELS = [
   'dashboard:overview',
   'reports:salesInRange',
   'reports:salesCsv',
+  'reports:purchasesInRange',
+  'reports:purchasesCsv',
   'products:exportCsv',
   'products:list',
   'products:search',
@@ -566,9 +596,8 @@ const DISPATCH_CHANNELS = [
   'purchases:remove',
   'credit:list',
   'credit:add',
-  'credit:remove',
-  'reports:purchasesInRange',
-  'reports:purchasesCsv'
+  'credit:update',
+  'credit:remove'
 ];
 
 module.exports = { runDispatch, DISPATCH_CHANNELS, getSetting };
